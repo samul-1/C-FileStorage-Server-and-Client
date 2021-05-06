@@ -47,6 +47,12 @@ typedef struct cacheStorage {
     FileNode_t* tPtr;
 
     pthread_mutex_t mutex;
+
+    pthread_mutex_t bufferLock;
+    char* logBuffer;
+
+    size_t maxReachedFileNum;
+    size_t maxReachedStorageSize;
 } CacheStorage_t;
 
 // ! remove

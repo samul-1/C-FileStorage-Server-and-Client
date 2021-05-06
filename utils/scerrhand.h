@@ -14,7 +14,6 @@
 
 #define DIE_ON_NZ(v)\
     do {\
-        puts(#v);\
         if(v) {\
             perror(#v);\
             exit(EXIT_FAILURE);\

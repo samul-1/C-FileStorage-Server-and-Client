@@ -53,6 +53,7 @@ int main() {
 
     // write to file -- limit exceeded, eviction of file 2
     assert(writeToFileHandler(store, fn3, "abcd", &list, 124) == 0);
+    printf("%ld\n", store->currStorageSize);
     assert(store->currStorageSize == 4);
     assert(store->currFileNum == 1);
 
@@ -100,6 +101,8 @@ int main() {
     // now delete file and get the list of clients blocked on it
     assert(removeFileHandler(store, fn1, &list, 21) == 0);
     // list contains 20->19
+    sleep(2);
+    puts(store->logBuffer);
     freeFdList(list);
     free(store);
 }

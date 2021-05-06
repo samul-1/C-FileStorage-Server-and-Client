@@ -13,6 +13,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "../utils/flags.h"
+#include "../utils/log.h"
+
+#define MAX(a,b) (a) > (b) ? (a) : (b)
 
 
 #define UPDATE_CACHE_BITS(p)\
@@ -179,7 +182,14 @@ CacheStorage_t* allocStorage(const size_t maxFileNum, const size_t maxStorageSiz
         errno = ENOMEM;
         return NULL;
     }
+    newStore->logBuffer = calloc(INITIALBUFSIZ * 100, 1);
+    if (!newStore->logBuffer) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
     DIE_ON_NZ(pthread_mutex_init(&(newStore->mutex), NULL));
+    DIE_ON_NZ(pthread_mutex_init(&(newStore->bufferLock), NULL));
     newStore->maxFileNum = maxFileNum;
     newStore->maxStorageSize = maxStorageSize;
     newStore->replacementAlgo = replacementAlgo;
@@ -286,6 +296,9 @@ void addFileToStore(CacheStorage_t* store, FileNode_t* filePtr) {
 
     store->currFileNum += 1;
     store->currStorageSize += filePtr->contentSize;
+
+    store->maxReachedFileNum = MAX(store->maxReachedFileNum, store->currFileNum);
+    store->maxReachedStorageSize = MAX(store->maxReachedStorageSize, store->currStorageSize);
 }
 
 
@@ -462,6 +475,8 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         return -1;
     }
 
+    DIE_ON_NZ(pthread_mutex_lock(&(store->bufferLock)));
+
     // first critical section: ensures no writers or readers will access the file
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
@@ -506,23 +521,29 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     // ! after page(s) replaced
     store->currStorageSize += newContentLen;
 
+    store->maxReachedStorageSize = MAX(store->maxReachedStorageSize, store->currStorageSize);
+
     void* tmp = realloc(fptr->content, fptr->contentSize + newContentLen);
     if (tmp) {
         fptr->content = tmp;
         strncat(fptr->content, newContent, newContentLen);
         fptr->contentSize += newContentLen;
+
+        //! LOGGER
+        puts("WROTE TO BUFFER");
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, WROTE, fptr, newContentLen, requestor);
+        //sprintf(store->logBuffer + strlen(store->logBuffer), "%ld - WRITE to %s (%zu bytes)\n", pthread_self(), fptr->pathname, newContentLen);
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
     }
     else {
         errnosave = ENOMEM;
     }
     // end actual write operation
-    puts("WROTE FILE");
     // second critical section: we're done writing, we can wake up any pending readers and also release the lock over the store
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
     fptr->isBeingWritten = false;
     DIE_ON_NZ(pthread_cond_broadcast(&(fptr->rwCond))); // wake up pending readers
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
-    puts("UNLOCKING STORE MUTEX");
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
     errno = errnosave;
     return errno ? -1 : 0;
