@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "../utils/flags.h"
-#include "../utils/log.h"
+#include "../include/log.h"
 
 #define MAX(a,b) (a) > (b) ? (a) : (b)
 
@@ -24,8 +24,11 @@
 
 #define INITIALBUFSIZ 1024
 
-#define IS_O_CREATE_SET(i) true // TODO implement
-#define IS_O_LOCK_SET(i) true // TODO implement
+#define CHECK_INPUT(storePtr, pathname, requestor)\
+    if(!storePtr || !strlen(pathname) || requestor <= 0 ) { \
+        errno=EINVAL;\
+        return -1;\
+    }
 
 
 static FileNode_t* getVictim(CacheStorage_t* store) {
@@ -182,7 +185,11 @@ CacheStorage_t* allocStorage(const size_t maxFileNum, const size_t maxStorageSiz
         errno = ENOMEM;
         return NULL;
     }
+
+    // todo review these values
     newStore->logBuffer = calloc(INITIALBUFSIZ * 100, 1);
+    newStore->logBufferSize = INITIALBUFSIZ * 100;
+
     if (!newStore->logBuffer) {
         errno = ENOMEM;
         return NULL;
@@ -376,14 +383,20 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
     return errno ? -1 : 0;
 }
 int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, size_t* size, const int requestor) {
-    // todo implement error checking
+    CHECK_INPUT(store, pathname, requestor);
     int errnosave = 0;
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
+    DIE_ON_NZ(pthread_mutex_lock(&(store->bufferLock)));
 
     FileNode_t* fptr = findFile(store, pathname);
 
+    // handle file not found
     if (!fptr) {
+        errnosave = errno;
         DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, READ, pathname, 0, requestor, errnosave);
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
+        errno = errnosave;
         return -1;
     }
 
@@ -393,10 +406,17 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
 
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
 
+
+    // handle file locked by another client
     if (fptr->lockedBy && fptr->lockedBy != requestor) {
-        errno = EACCES;
+        errnosave = EACCES;
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
+
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, READ, pathname, 0, requestor, errnosave);
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
+
+        errno = errnosave;
         return -1;
     }
 
@@ -424,6 +444,9 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
         *size = fptr->contentSize;
     }
     // end actual read operation
+
+    WRITE_EXTOP_TO_LOG_BUF(buf, READ, pathname, fptr->contentSize, requestor, 0);
+    DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
 
     // second critical section: we're done reading so, if no more readers are active, we can let a writer in
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
@@ -461,7 +484,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
 
      // todo check the last operation was open file
 
-     // todo error checking
+    CHECK_INPUT(store, pathname, requestor);
 
     int errnosave = 0;
 
@@ -469,13 +492,19 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
 
     FileNode_t* fptr = findFile(store, pathname);
+    DIE_ON_NZ(pthread_mutex_lock(&(store->bufferLock)));
 
     if (!fptr) {
         DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
+        errnosave = errno;
+
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, WROTE, pathname, 0, requestor, errno);
+
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
+        errno = errnosave;
         return -1;
     }
 
-    DIE_ON_NZ(pthread_mutex_lock(&(store->bufferLock)));
 
     // first critical section: ensures no writers or readers will access the file
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));
@@ -531,8 +560,8 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
 
         //! LOGGER
         puts("WROTE TO BUFFER");
-        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, WROTE, fptr, newContentLen, requestor);
-        //sprintf(store->logBuffer + strlen(store->logBuffer), "%ld - WRITE to %s (%zu bytes)\n", pthread_self(), fptr->pathname, newContentLen);
+        printf("LOG BUFFER LENGTH %ld\n", strlen(store->logBuffer));
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, WROTE, fptr->pathname, newContentLen, requestor, 0);
         DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
     }
     else {
@@ -568,11 +597,17 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
      * `EINVAL` invalid parameters
      */
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
+    DIE_ON_NZ(pthread_mutex_lock(&(store->bufferLock)));
+    int errnosave = 0;
 
     FileNode_t* fptr = findFile(store, pathname);
 
     if (!fptr) {
+        errnosave = errno;
         DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, LOCK, pathname, 0, requestor, errno);
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
+        errno = errnosave;
         return -1;
     }
 
@@ -590,6 +625,10 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
         DIE_ON_NEG_ONE(pushFdToPendingQueue(fptr, requestor));
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
+
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, LOCK, pathname, 0, requestor, -2);
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
+
         return -2;
     }
 
@@ -599,6 +638,8 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     fptr->lockedBy = requestor;
+    WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, LOCK, pathname, 0, requestor, 0);
+    DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
 
     // second critical section: we're done writing, we can wake up any pending readers and also release the lock over the store
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
@@ -626,14 +667,19 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
      * `ENOENT' file not found \n
      * `EINVAL` invalid parameters
      */
-     // todo error checking
+    CHECK_INPUT(store, pathname, requestor);
     int errnosave = 0;
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
 
     FileNode_t* fptr = findFile(store, pathname);
+    DIE_ON_NZ(pthread_mutex_lock(&(store->bufferLock)));
 
     if (!fptr) {
+        errnosave = errno;
         DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, UNLOCK, pathname, 0, requestor, errno);
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
+        errno = errnosave;
         return -1;
     }
 
@@ -656,10 +702,13 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
         *newLockFd = newLock;
 
         fptr->lockedBy = newLock;
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, UNLOCK, pathname, 0, requestor, 0);
     }
     else {
         errnosave = EACCES;
+        WRITE_EXTOP_TO_LOG_BUF(store->logBuffer, UNLOCK, pathname, 0, requestor, errnosave);
     }
+    DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
 
     DIE_ON_NZ(pthread_cond_broadcast(&(fptr->rwCond))); // wake up pending readers or writers
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
@@ -682,7 +731,7 @@ int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requ
      * `ENOENT' file not found \n
      * `EINVAL` invalid parameters
      */
-     // todo error checking
+    CHECK_INPUT(store, pathname, requestor);
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
 
     FileNode_t* fptr = findFile(store, pathname);
@@ -736,11 +785,8 @@ int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode
      * `EINVAL` invalid parameters \n
      * `EACCES` trying to delete a file that's unlocked or locked by another process
      */
-     // todo error checking
-    if (!store || !strlen(pathname) || requestor <= 0) {
-        errno = EINVAL;
-        return -1;
-    }
+    CHECK_INPUT(store, pathname, requestor);
+
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
 
     errno = 0;

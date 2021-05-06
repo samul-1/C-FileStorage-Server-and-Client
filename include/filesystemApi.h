@@ -1,3 +1,6 @@
+#ifndef FS_API_H
+#define FS_API_H
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -49,6 +52,7 @@ typedef struct cacheStorage {
     pthread_mutex_t mutex;
 
     pthread_mutex_t bufferLock;
+    size_t logBufferSize;
     char* logBuffer;
 
     size_t maxReachedFileNum;
@@ -78,3 +82,4 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
 int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requestor);
 int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode** notifyList, const int requestor);
 
+#endif

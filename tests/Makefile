@@ -10,7 +10,7 @@ CFLAGS = -Wall -g -std=c99 -pthread
 BIN = singlethread
 
 # Object files from which $BIN depends
-OBJS = ../obj/filesystemApi.o
+OBJS = ../obj/filesystemApi.o ../obj/log.o
 
 # Path of Object files
 OBJDIR = ../obj
