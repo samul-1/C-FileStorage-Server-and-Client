@@ -14,7 +14,6 @@
 
 #define DIE_ON_NZ(v)\
     do {\
-        puts(#v);\
         fflush(NULL);\
         if (v) {\
             perror(#v);\

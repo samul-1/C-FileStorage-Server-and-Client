@@ -40,6 +40,7 @@ int main() {
     // write to file (without exceeding limit)
     assert(writeToFileHandler(store, fn1, "abcdefg", &list, 124) == 0);
     assert(store->currStorageSize == 7);
+    printFile(store, fn1);
 
     // second file creation
     assert(openFileHandler(store, fn2, O_CREATE, &list, 1) == 0);

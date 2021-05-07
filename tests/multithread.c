@@ -1,4 +1,3 @@
-#define _BSD_SOURCE
 #include <stdio.h> 
 #include <stdlib.h>
 #include "../include/filesystemApi.h"
@@ -13,71 +12,75 @@ char* fns[11] = { "file1", "file2", "file3",  "file4", "file5", "file6", "file7"
 
 void* fakeWorker(void* args) {
     CacheStorage_t* store = (CacheStorage_t*)args;
-    unsigned int seedp;
+    unsigned int seedp = 0;
     //srand(pthread_self());
     int actIdx = 0;
 
-    struct fdNode* list;
-    int* newlock;
     char* buf;
-    size_t* size;
+    size_t size = 0;
 
-    while (1) {
+    while (actIdx < 1000) {
         int fileIdx = rand_r(&seedp) % 10;
+        struct fdNode* list = NULL;
+        int newlock = 0;
 
-        char* myfile = fns[fileIdx % 2];
+        printf("%p\n", &list);
+        char* myfile = fns[fileIdx];
         switch (actIdx++ % 7) {
         case 0:
-            printf("OPEN %s- OP no %d\n", myfile, actIdx + 1);
+            printf("OPEN %s- OP no %d\n", myfile, ((actIdx + 1) % 3 + 1));
             fflush(NULL);
-            openFileHandler(store, myfile, O_CREATE | O_LOCK, &list, fileIdx + 1);
+            openFileHandler(store, myfile, O_CREATE | O_LOCK, &list, ((actIdx + 1) % 3 + 1));
+            writeToFileHandler(store, myfile, "hifgrrwqoijerwoepqfejwqoeasfwmqdsfl", &list, 1);
+
             break;
         case 1:
             //break;
-            printf("READ %s- OP no %d\n", myfile, actIdx + 1);
+            printf("READ %s- OP no %d\n", myfile, ((actIdx + 1) % 3 + 1));
             fflush(NULL);
-            readFileHandler(store, myfile, &buf, size, fileIdx + 1);
+            readFileHandler(store, myfile, (void*)&buf, &size, fileIdx + 1);
             break;
         case 2:
             //break;
-            printf("WRITE %s- OP no %d\n", myfile, actIdx + 1);
+            printf("WRITE %s- OP no %d\n", myfile, ((actIdx + 1) % 3 + 1));
             fflush(NULL);
-            writeToFileHandler(store, myfile, myfile, &list, fileIdx + 1);
+            writeToFileHandler(store, myfile, "hifgrrwqoijerwoepqfejwqoeasfwmqdsfl", &list, fileIdx + 1);
             break;
         case 3:
-            // break;
-            printf("LOCK %s- OP no %d\n", myfile, actIdx + 1);
+            //break;
+            printf("LOCK %s- OP no %d\n", myfile, ((actIdx + 1) % 3 + 1));
             fflush(NULL);
             lockFileHandler(store, myfile, fileIdx + 1);
             break;
         case 4:
-            //        break;
-            printf("UNLOCK %s- OP no %d\n", myfile, actIdx + 1);
-            unlockFileHandler(store, myfile, newlock, fileIdx + 1);
+            //break;
+            printf("UNLOCK %s- OP no %d\n", myfile, ((actIdx + 1) % 3 + 1));
+            fflush(NULL);
+            unlockFileHandler(store, myfile, &newlock, fileIdx + 1);
             break;
         case 5:
-            //            break;
-            printf("CLOSE %s- OP no %d\n", myfile, actIdx + 1);
+            //break;
+            printf("CLOSE %s- OP no %d\n", myfile, ((actIdx + 1) % 3 + 1));
             fflush(NULL);
             closeFileHandler(store, myfile, fileIdx + 1);
             break;
         case 6:
-            // break;
-            printf("REMOVE %s- OP no %d\n", myfile, actIdx + 1);
+            //break;
+            printf("REMOVE %s- OP no %d\n", myfile, ((actIdx + 1) % 3 + 1));
             fflush(NULL);
             removeFileHandler(store, myfile, &list, fileIdx + 1);
             break;
         }
-        //usleep(100000);
-        sleep(1);
+        usleep(1000);
+        //sleep(1);
     }
 }
 
 int main() {
     // store creation
-    CacheStorage_t* store = allocStorage(2, 10, 0);
+    CacheStorage_t* store = allocStorage(20, 100000000, 0);
     assert(store);
-    int nthreads = 1;
+    int nthreads = 10;
     pthread_t tids[nthreads];
     struct logFlusherArgs logArgs = { "logs.txt", store, 0 };
     pthread_t logTid;
@@ -86,11 +89,13 @@ int main() {
         DIE_ON_NZ(pthread_create(&tids[i], NULL, fakeWorker, (void*)store));
     }
 
-    DIE_ON_NZ(pthread_create(&logTid, NULL, logFlusher, (void*)&logArgs));
+    //DIE_ON_NZ(pthread_create(&logTid, NULL, logFlusher, (void*)&logArgs));
     puts("all threads created");
     sleep(1);
     for (size_t i = 0; i < nthreads; i++) {
         DIE_ON_NZ(pthread_join(tids[i], NULL));
     }
+    // DIE_ON_NZ(pthread_join(logTid, NULL));
+
     return EXIT_SUCCESS;
 }
