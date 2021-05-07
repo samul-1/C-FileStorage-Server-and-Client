@@ -33,7 +33,9 @@ typedef struct fileNode {
     pthread_cond_t rwCond; /*< Used to guarantee at most 1 writer at a time */
 
     size_t refCount; /*< # of times the file was used since last iteration of LFU algorithm */
-    time_t lastRef; /*< time elapsed since the last time the file was used */
+    time_t lastRef; /*< time elapsed since the last time the file was used - used for LFU algorithm */
+    time_t insertionTime; /*< time of insertion of file in cache - used for FIFO algorithm*/
+
     struct fileNode* prevPtr;
     struct fileNode* nextPtr;
 } FileNode_t;

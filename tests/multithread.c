@@ -21,7 +21,7 @@ void* fakeWorker(void* args) {
     char* buf;
     size_t size = 0;
     //BoundedBuffer* buf = allocBoundedBuffer(1000, sizeof(int));
-    while (actIdx < 163) {
+    while (actIdx < 1600) {
 
         int fileIdx = rand_r(&seedp) % 10;
         struct fdNode* list = NULL;

@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include "../utils/flags.h"
 #include "../include/log.h"
+#include "../include/cacheFns.h"
 
 #define MAX(a,b) (a) > (b) ? (a) : (b)
 
@@ -32,8 +33,18 @@
 
 
 static FileNode_t* getVictim(CacheStorage_t* store) {
-    // todo implement other algorithms
-    return store->hPtr;
+    FileNode_t* victim = store->hPtr;
+    if (store->replacementAlgo != FIFO_ALGO) {
+        FileNode_t* currPtr = store->hPtr;
+        while (currPtr) {
+            if ((*cmp_fns[store->replacementAlgo])(currPtr, victim) > 0) {
+                victim = currPtr;
+            }
+            currPtr = currPtr->nextPtr;
+        }
+    }
+    return victim;
+
 }
 
 static void logEvent(BoundedBuffer* buffer, char* op, char* pathname, int outcome, int requestor) {
@@ -48,7 +59,7 @@ static void logEvent(BoundedBuffer* buffer, char* op, char* pathname, int outcom
     else {
         sprintf(eventBuf + strlen(eventBuf), " - PUT ON WAIT(code % d)\n", outcome);
     }
-    puts(eventBuf);
+    // puts(eventBuf);
     enqueue(buffer, eventBuf);
 }
 
@@ -192,8 +203,7 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
     free(fptr->content);
 
     free(fptr);
-    puts("DELETED");
-    fflush(NULL);
+    //puts("DELETED");
     return 0; // ? errors?
 
 }
@@ -227,7 +237,9 @@ FileNode_t* allocFile(const char* pathname) {
     }
 
     newFile->pathname = malloc(INITIALBUFSIZ);
-    newFile->content = calloc(INITIALBUFSIZ, 1);
+    newFile->content = calloc(INITIALBUFSIZ, 1); //? why calloc
+    newFile->insertionTime = time(0);
+
     if (!newFile->pathname || !newFile->content) {
         errno = ENOMEM;
         return NULL;
