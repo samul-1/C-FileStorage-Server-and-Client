@@ -517,6 +517,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         errno = EACCES;
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
         DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
         return -1;
     }

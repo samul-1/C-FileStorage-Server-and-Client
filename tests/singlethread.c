@@ -26,7 +26,7 @@ int main() {
 
     struct logFlusherArgs logArgs = { "logs.txt", store, 0 };
     pthread_t logTid;
-    DIE_ON_NZ(pthread_create(&logTid, NULL, logFlusher, (void*)&logArgs));
+    //DIE_ON_NZ(pthread_create(&logTid, NULL, logFlusher, (void*)&logArgs));
     // file creation
     assert(openFileHandler(store, fn1, O_CREATE, &list, 1) == 0);
     assert(store->currFileNum == 1);
@@ -85,11 +85,9 @@ int main() {
 
     // lock file again
     assert(lockFileHandler(store, fn3, 3000) == 0);
-    sleep(1);
     // delete now succeeds
     assert(removeFileHandler(store, fn3, &list, 3000) == 0);
     assert(store->currFileNum == 0);
-
     // create file with lock
     assert(openFileHandler(store, fn1, O_CREATE | O_LOCK, &list, 22) == 0);
     // delete fails because file is blocked by another client
@@ -99,7 +97,6 @@ int main() {
     // try to lock file that's locked by another client
     assert(lockFileHandler(store, fn1, 21) == -2);
     assert(lockFileHandler(store, fn1, 20) == -2);
-    sleep(5);
     assert(lockFileHandler(store, fn1, 19) == -2);
     // waiting list is now 21->20->19
 
@@ -110,8 +107,7 @@ int main() {
     // now delete file and get the list of clients blocked on it
     assert(removeFileHandler(store, fn1, &list, 21) == 0);
     // list contains 20->19
-    //puts(store->logBuffer);
-    pthread_join(logTid, NULL);
+    //pthread_join(logTid, NULL);
     freeFdList(list);
     free(store);
 }
