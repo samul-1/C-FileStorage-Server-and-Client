@@ -11,17 +11,11 @@ void* logFlusher(void* args) {
     CacheStorage_t* store = tArgs->store;
     FILE* logFile;
     DIE_ON_NULL((logFile = fopen(tArgs->pathname, "w")));
+    char buf[EVENT_SLOT_SIZE];
     // todo manage exit condition
     while (true) {
-        DIE_ON_NZ(pthread_mutex_lock(&(store->bufferLock)));
-        puts("-----------------------------------");
-        puts(store->logBuffer);
-        puts("-----------------------------------");
-        DIE_ON_NEG_ONE(fputs(store->logBuffer, logFile));
-
-        // might be deleting something without actually writing it to file
-        memset(store->logBuffer, 0, store->logBufferSize);
-        DIE_ON_NZ(pthread_mutex_unlock(&(store->bufferLock)));
+        dequeue(store->logBuffer, buf, EVENT_SLOT_SIZE);
+        fputs(buf, logFile);
         sleep(tArgs->interval);
     }
     // todo close logfile

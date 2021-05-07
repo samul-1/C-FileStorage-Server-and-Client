@@ -10,14 +10,13 @@ CFLAGS = -Wall -g -std=c99 -pthread
 BIN = multithread
 
 # Object files from which $BIN depends
-OBJS = ../obj/filesystemApi.o ../obj/log.o
+OBJS = ../obj/filesystemApi.o ../obj/log.o ../obj/boundedbuffer.o
 
 # Path of Object files
 OBJDIR = ../obj
 
 SRCDIR = ../src
 HEADDIR = ../include
-
 # Libraries
 LIBS = -lpthread
 

@@ -14,9 +14,8 @@
 
 #define DIE_ON_NZ(v)\
     do {\
-        fflush(NULL);\
         if (v) {\
-            perror(#v);\
+            printf("value %d\n", (v));\
             exit(EXIT_FAILURE);\
         }\
     } while (0);

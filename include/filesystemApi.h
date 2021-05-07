@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <string.h>
+#include "../include/boundedBuffer/boundedbuffer.h"
 
 struct fdNode {
     int fd;
@@ -51,9 +52,11 @@ typedef struct cacheStorage {
 
     pthread_mutex_t mutex;
 
-    pthread_mutex_t bufferLock;
-    size_t logBufferSize;
-    char* logBuffer;
+    //pthread_mutex_t bufferLock;
+    //size_t logBufferSize;
+    //char* logBuffer;
+
+    BoundedBuffer* logBuffer;
 
     size_t maxReachedFileNum;
     size_t maxReachedStorageSize;
