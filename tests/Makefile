@@ -10,7 +10,7 @@ CFLAGS = -Wall -g -std=c99 -pthread
 BIN = cachealgos
 
 # Object files from which $BIN depends
-OBJS = ../obj/filesystemApi.o ../obj/log.o ../obj/boundedbuffer.o ../obj/cacheFns.o
+OBJS = ../obj/filesystemApi.o ../obj/log.o ../obj/boundedbuffer.o ../obj/cacheFns.o ../obj/icl_hash.o
 
 # Path of Object files
 OBJDIR = ../obj

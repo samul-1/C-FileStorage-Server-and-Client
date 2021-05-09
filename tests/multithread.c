@@ -99,7 +99,7 @@ int main() {
         DIE_ON_NZ(pthread_join(tids[i], NULL));
     }
 
-    DIE_ON_NZ(pthread_join(logTid, NULL));
+    //DIE_ON_NZ(pthread_join(logTid, NULL));
     puts("SUCCESS");
     return EXIT_SUCCESS;
 }

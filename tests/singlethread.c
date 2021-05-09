@@ -40,9 +40,9 @@ int main() {
     // write to file (without exceeding limit)
     assert(writeToFileHandler(store, fn1, "abcdefg", &list, 124) == 0);
     assert(store->currStorageSize == 7);
-    printFile(store, fn1);
+    // printFile(store, fn1);
 
-    // second file creation
+     // second file creation
     assert(openFileHandler(store, fn2, O_CREATE, &list, 1) == 0);
     assert(store->currFileNum == 2);
     assert(store->currStorageSize == 7);
@@ -62,7 +62,7 @@ int main() {
 
     // write to file -- limit exceeded, eviction of file 2
     assert(writeToFileHandler(store, fn3, "abcd", &list, 124) == 0);
-    printf("%ld\n", store->currStorageSize);
+    //printf("%ld\n", store->currStorageSize);
     assert(store->currStorageSize == 4);
     assert(store->currFileNum == 1);
 

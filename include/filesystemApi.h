@@ -5,7 +5,8 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <string.h>
-#include "../include/boundedBuffer/boundedbuffer.h"
+#include "boundedbuffer.h"
+#include "icl_hash.h"
 
 struct fdNode {
     int fd;
@@ -51,6 +52,7 @@ typedef struct cacheStorage {
 
     FileNode_t* hPtr;
     FileNode_t* tPtr;
+    icl_hash_t* dictStore;
 
     pthread_mutex_t mutex;
 

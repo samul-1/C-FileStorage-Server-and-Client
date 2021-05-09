@@ -159,7 +159,6 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     //! permission checking needs to be done somewhere else
-
     while (fptr->activeReaders > 0) {
         DIE_ON_NZ(pthread_cond_wait(&(fptr->rwCond), &(fptr->mutex)));
     }
@@ -196,7 +195,9 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
     //DIE_ON_NZ(pthread_mutex_destroy(&(fptr->mutex)));
     //DIE_ON_NZ(pthread_mutex_destroy(&(fptr->ordering)));
 
-    // ? need to do this?
+    // delete from dictionary
+    assert(icl_hash_delete(store->dictStore, fptr->pathname, NULL, NULL) == 0); // must succeed
+
     free(fptr->pathname);
     free(fptr->content);
 
@@ -214,8 +215,15 @@ CacheStorage_t* allocStorage(const size_t maxFileNum, const size_t maxStorageSiz
     }
     newStore->logBuffer = allocBoundedBuffer(EVENT_BUF_CAP, EVENT_SLOT_SIZE + 1);
     if (!newStore->logBuffer) {
-        errno = ENOMEM;
         free(newStore);
+        errno = ENOMEM;
+        return NULL;
+    }
+    newStore->dictStore = icl_hash_create(maxFileNum / 10 + 1, NULL, NULL);
+    if (!newStore->dictStore) {
+        free(newStore->logBuffer);
+        free(newStore);
+        errno = ENOMEM;
         return NULL;
     }
 
@@ -270,15 +278,22 @@ static FileNode_t* findFile(const CacheStorage_t* store, const char* pathname) {
         return NULL;
     }
 
-    FileNode_t* currPtr = store->hPtr;
+    // FileNode_t* currPtr = store->hPtr;
 
-    while (currPtr && strcmp(currPtr->pathname, pathname)) { //? strncmp?
-        currPtr = currPtr->nextPtr;
-    }
-    if (!currPtr) {
+    // while (currPtr && strcmp(currPtr->pathname, pathname)) { //? strncmp?
+    //     currPtr = currPtr->nextPtr;
+    // // }
+    // if (!currPtr) {
+    //     errno = ENOENT;
+    // }
+
+    //return currPtr;
+
+    void* ret = icl_hash_find(store->dictStore, (void*)pathname);
+    if (!ret) {
         errno = ENOENT;
     }
-    return currPtr;
+    return (FileNode_t*)ret;
 }
 
 
@@ -315,6 +330,8 @@ void addFileToStore(CacheStorage_t* store, FileNode_t* filePtr) {
      * @note Operates under the assumption that the caller has mutual exclusion over the store
      *
      */
+
+     // add file to list structure
     if (!store->hPtr) {
         store->hPtr = filePtr;
         //store->tPtr = filePtr; //?
@@ -326,6 +343,9 @@ void addFileToStore(CacheStorage_t* store, FileNode_t* filePtr) {
             store->tPtr->nextPtr = filePtr;
     }
     store->tPtr = filePtr;
+
+    // add file to dict structure
+    icl_hash_insert(store->dictStore, filePtr->pathname, filePtr);
 
     // ? all good? mutex?
 
@@ -386,8 +406,6 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
     else {
         if (store->currFileNum == store->maxFileNum) {
             FileNode_t* victim = getVictim(store);
-            printf("will delete %s\n", victim->pathname);
-            fflush(NULL);
             destroyFile(store, victim, notifyList);
         }
         fPtr = allocFile(pathname);
