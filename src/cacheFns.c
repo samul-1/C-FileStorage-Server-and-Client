@@ -1,10 +1,5 @@
-#ifndef CACHE_FNS_H
-#define CACHE_FNS_H
-
 #include "../include/cacheFns.h"
-
 #include "../include/filesystemApi.h"
-
 
 /**
  * Defines comparator functions used by the cache heap to determine the files
@@ -24,5 +19,3 @@ int fifo_cmp(const void* f1, const void* f2) {
 }
 
 const (*cmp_fns[3])(void* f1, void* f2) = { fifo_cmp, lru_cmp, lfu_cmp };
-
-#endif
