@@ -47,7 +47,7 @@ static FileNode_t* getVictim(CacheStorage_t* store) {
 
 }
 
-static void logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
+static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
     char eventBuf[EVENT_SLOT_SIZE];
     sprintf(eventBuf, "REQ: %d WO: %ld - %s %s ", requestor, pthread_self(), op, pathname);
     if (!(outcome)) {
@@ -60,7 +60,7 @@ static void logEvent(BoundedBuffer* buffer, const char* op, const char* pathname
         sprintf(eventBuf + strlen(eventBuf), " - PUT ON WAIT(code % d)\n", outcome);
     }
     // puts(eventBuf);
-    enqueue(buffer, eventBuf);
+    return enqueue(buffer, eventBuf);
 }
 
 // ! --------------------------------------------------------------------------
@@ -345,7 +345,7 @@ void addFileToStore(CacheStorage_t* store, FileNode_t* filePtr) {
     store->tPtr = filePtr;
 
     // add file to dict structure
-    icl_hash_insert(store->dictStore, filePtr->pathname, filePtr);
+    icl_hash_insert(store->dictStore, filePtr->pathname, filePtr); // todo manage error
 
     // ? all good? mutex?
 

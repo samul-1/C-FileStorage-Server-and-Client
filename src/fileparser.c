@@ -1,19 +1,15 @@
 /*! \file */
 
 
-#include "fileparser.h"
+#include "../include/fileparser.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
-#include "../scerrhand.h"
+#include "../utils/scerrhand.h"
 #include <assert.h>
-#include <errno.h>
 
-#define MAX_FILENAME_LEN 100
-#define MAX_DELIM_LEN 1
-#define MAX_KEY_LEN 50
-#define MAX_VAL_LEN 200
+
 
 struct _pair {
     /**

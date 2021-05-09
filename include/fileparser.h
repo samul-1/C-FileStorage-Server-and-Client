@@ -3,6 +3,11 @@
 
 #define _GNU_SOURCE
 
+#define MAX_FILENAME_LEN 500
+#define MAX_DELIM_LEN 3
+#define MAX_KEY_LEN 100
+#define MAX_VAL_LEN 500
+
 typedef struct _parser Parser;
 
 Parser* parseFile(char* filename, char* delim);
