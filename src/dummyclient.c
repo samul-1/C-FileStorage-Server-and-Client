@@ -65,17 +65,27 @@ int main(int argc, char** argv) {
         memset(writeBuf, 0, MAX_MSG_LEN);
         //scanf("%s", writeBuf); // type next message
 
-        fgets(writeBuf, 10, stdin);
+        fgets(writeBuf, MAX_MSG_LEN, stdin);
         if (!strncmp(writeBuf, "exit", 5)) { // close on "exit" message
             break;
         }
         else {
+
+            puts("you typed:");
             puts(writeBuf);
-            //write(fd_socket, writeBuf, strlen(writeBuf) - 1); // write to socket
-            write(fd_socket, "300000005abcde", 14); // write to socket
+            size_t len = strlen(writeBuf);
+            char tmp[10] = "";
+            sprintf(tmp, "3%08zu", len - 1);
+            char sendBuf[MAX_MSG_LEN] = "";
+            strncpy(sendBuf, tmp, 9);
+            strncpy((sendBuf + 9), writeBuf, strlen(writeBuf) - 1);
+            puts("server gonna see:");
+            puts(sendBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf)); // write to socket
+            //write(fd_socket, "300000005abcde", 14); // write to socket
         }
     }
-    pthread_kill(readThread, SIGINT); // end read thread
+    //pthread_kill(readThread, SIGINT); // end read thread
     close(fd_socket); // close communication
     exit(EXIT_SUCCESS);
 

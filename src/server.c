@@ -59,6 +59,38 @@ struct _args {
 };
 
 
+char* getRequestPayloadSegment(int fd) {
+    /**
+     * @brief Takes in an fd that has written a segment of a request payload, reads the payload, and returns it.
+     * @note This function assumes the fd has written a string that abides by the protocol: \n
+     * i.e. the length of the segment (normalized to 8 digits) immediately followed by a string of that length
+     * @note This function allocates memory on the heap that the caller must later call `free` on.
+     *
+     *
+     * @param fd The fd to read. Note: this function assumes the request code has been read already and the next \n
+     * bytes from the fd are the length of the pathname and the pathname of the file.
+     *
+     * @return A string containing the read segment
+     *
+     */
+    char
+        metadataBuf[METADATA_SIZE + 1] = "",
+        * recvBuf;
+
+    // todo use readn
+    DIE_ON_NEG_ONE(read(fd, metadataBuf, METADATA_SIZE)); // todo better error handling
+    size_t filenameLen = atol(metadataBuf); // todo err handling
+
+    // now we have enough memory to store the filename
+    DIE_ON_NULL((recvBuf = calloc(filenameLen + 1, 1)));
+    DIE_ON_NEG_ONE(read(fd, recvBuf, filenameLen));
+
+    return recvBuf;
+
+}
+
+
+
 void* _startWorker(void* args) {
     /*
     Upon being called, enters an infinite loop and
@@ -70,7 +102,7 @@ void* _startWorker(void* args) {
         char requestCodeBuf[REQ_CODE_LEN] = "";
         char pipeBuf[PIPE_BUF_LEN] = "";
         char metadataBuf[METADATA_SIZE + 1] = "";
-        char* recvLine;
+        char* recvLine1, * recvLine2;
 
         BoundedBuffer* taskBuf = ((struct _args*)args)->buf;
         int pipeOut = ((struct _args*)args)->pipeOut;
@@ -83,10 +115,14 @@ void* _startWorker(void* args) {
 
         if (numRead) {
             long requestCode = atol(requestCodeBuf); // todo handle error
-            printf("read %s - reqn %ld\n", requestCodeBuf, requestCode);
+
+            // get request filepath from client
+            recvLine1 = getRequestPayloadSegment(rdy_fd);
+            //printf("read %s - reqn %ld\n", requestCodeBuf, requestCode);
             switch (requestCode) {
             case OPEN_FILE:
                 puts("open");
+                // todo get flags
                 // handle open
                 break;
             case CLOSE_FILE:
@@ -94,20 +130,17 @@ void* _startWorker(void* args) {
                 break;
             case READ_FILE:
                 puts("read");
-                size_t rd = read(rdy_fd, metadataBuf, METADATA_SIZE);
-                printf("I just read %ld bytes that is %s\n", rd, metadataBuf);
-                //puts(metadataBuf);
-                size_t filenamesize = atol(metadataBuf);
-                printf("filename length is %ld\n", filenamesize);
-                recvLine = calloc(filenamesize + 1, 1);
-                read(rdy_fd, recvLine, filenamesize);
-                printf("client wants to read %s\n", recvLine);
+                printf("client wants to read %s\n", recvLine1);
                 break;
             case WRITE_FILE:
                 puts("write");
+                // get file content to write
+                recvLine2 = getRequestPayloadSegment(rdy_fd);
                 break;
             case APPEND_TO_FILE:
                 puts("append");
+                // get file content to append
+                recvLine2 = getRequestPayloadSegment(rdy_fd);
                 break;
             case LOCK_FILE:
                 puts("lock");
@@ -122,9 +155,17 @@ void* _startWorker(void* args) {
                 puts("unknown");
             }
 
-            // put client fd back in readset
-            snprintf(pipeBuf, PIPE_BUF_LEN, "%d", rdy_fd); // convert int to string
-            DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, 5)); // tell manager we're done handling the request
+            free(recvLine1);
+            if (requestCode == WRITE_FILE || requestCode == APPEND_TO_FILE) {
+                free(recvLine2);
+            }
+
+            // we're done handling this request -- put client fd back in readset
+
+            // convert int to string
+            snprintf(pipeBuf, PIPE_BUF_LEN, "%d", rdy_fd);
+            // tell manager we're done handling the request
+            DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
         }
         else {
             // todo handle exit routine
@@ -146,6 +187,7 @@ int main(int argc, char** argv) {
         printErrAsStr(configParser);
         return EXIT_FAILURE;
     }
+
 
     size_t
         maxStorageCap,
@@ -183,7 +225,7 @@ int main(int argc, char** argv) {
     int fd_num = 0;
 
     int w2mPipe[2]; // worker-to-manager pipe to pass back fd's ready to be `select`ed again
-    char pipebuf[BUFSIZ];
+    char pipebuf[PIPE_BUF_LEN] = "";
 
     struct sockaddr_un saddr; // contains the socket address
 
@@ -206,18 +248,16 @@ int main(int argc, char** argv) {
 
     fd_num = MAX(fd_socket, fd_num);
 
-    // initialize readset mask
+    // initialize readset
     FD_ZERO(&setsave);
     FD_SET(fd_socket, &setsave);
-    FD_SET(w2mPipe[0], &setsave); // read messages from workers
+    FD_SET(w2mPipe[0], &setsave);
 
     struct _args* threadArgs = malloc(sizeof(*threadArgs));
     threadArgs->buf = taskBuffer;
     threadArgs->store = store;
     threadArgs->pipeOut = w2mPipe[1];
 
-    //!
-    //unlink(sockname);
 
     DIE_ON_NULL((workers = malloc(workerPoolSize * sizeof(pthread_t))));
     // create worker threads
@@ -225,10 +265,9 @@ int main(int argc, char** argv) {
         DIE_ON_NEG_ONE(pthread_create(&workers[i], NULL, &_startWorker, (void*)threadArgs));
     }
 
-    while (1) {
+    while (true) {
         rset = setsave; // re-initialize the read set
 
-       // puts("calling select...");
         // wait for a fd to be ready for read operation
         DIE_ON_NEG_ONE(select(fd_num + 1, &rset, NULL, NULL, NULL));
 
@@ -237,7 +276,7 @@ int main(int argc, char** argv) {
             if (FD_ISSET(i, &rset)) { // file descriptor is ready
                 if (i == w2mPipe[0]) { // worker is done with a request
                     // add file descriptor back into readset
-                    DIE_ON_NEG_ONE(read(i, pipebuf, BUFSIZ));
+                    DIE_ON_NEG_ONE(read(i, pipebuf, PIPE_BUF_LEN));
                     FD_SET(atol(pipebuf), &setsave);
                     fd_num = MAX(atol(pipebuf), fd_num);
                 }
@@ -262,6 +301,5 @@ int main(int argc, char** argv) {
                 }
             }
         }
-
     }
 }
