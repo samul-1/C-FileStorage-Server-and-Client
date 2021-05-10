@@ -22,6 +22,7 @@
 
 #define REQ_CODE_LEN 1
 #define PIPE_BUF_LEN 5
+#define METADATA_SIZE 8 // todo move this to a protocol header file
 
 #define DFL_POOLSIZE 10
 #define DFL_MAXSTORAGECAP 10000
@@ -64,10 +65,12 @@ void* _startWorker(void* args) {
     reads tasks from the queue, processing them one at a time
     */
     while (true) {
-        int rdy_fd;
-        ssize_t numRead;
-        char requestCodeBuf[REQ_CODE_LEN + 1];
-        char pipeBuf[PIPE_BUF_LEN];
+        int rdy_fd = 0;
+        ssize_t numRead = 0;
+        char requestCodeBuf[REQ_CODE_LEN] = "";
+        char pipeBuf[PIPE_BUF_LEN] = "";
+        char metadataBuf[METADATA_SIZE + 1] = "";
+        char* recvLine;
 
         BoundedBuffer* taskBuf = ((struct _args*)args)->buf;
         int pipeOut = ((struct _args*)args)->pipeOut;
@@ -77,9 +80,10 @@ void* _startWorker(void* args) {
 
         // read request code
         DIE_ON_NEG_ONE((numRead = read(rdy_fd, requestCodeBuf, REQ_CODE_LEN)));  // todo handle error properly
-        long requestCode = atol(requestCodeBuf); // todo handle error
 
         if (numRead) {
+            long requestCode = atol(requestCodeBuf); // todo handle error
+            printf("read %s - reqn %ld\n", requestCodeBuf, requestCode);
             switch (requestCode) {
             case OPEN_FILE:
                 puts("open");
@@ -90,6 +94,14 @@ void* _startWorker(void* args) {
                 break;
             case READ_FILE:
                 puts("read");
+                size_t rd = read(rdy_fd, metadataBuf, METADATA_SIZE);
+                printf("I just read %ld bytes that is %s\n", rd, metadataBuf);
+                //puts(metadataBuf);
+                size_t filenamesize = atol(metadataBuf);
+                printf("filename length is %ld\n", filenamesize);
+                recvLine = calloc(filenamesize + 1, 1);
+                read(rdy_fd, recvLine, filenamesize);
+                printf("client wants to read %s\n", recvLine);
                 break;
             case WRITE_FILE:
                 puts("write");
@@ -102,9 +114,6 @@ void* _startWorker(void* args) {
                 break;
             case UNLOCK_FILE:
                 puts("unlock");
-                break;
-            case CLOSE_FILE:
-                puts("close");
                 break;
             case REMOVE_FILE:
                 puts("remove");
@@ -129,8 +138,9 @@ int main(int argc, char** argv) {
     /*
     Starts a server with a pool of `poolSize` worker threads
     */
+    puts("starting server");
     Parser* configParser;
-    DIE_ON_NULL(configParser = parseFile("config.txt", "="));
+    DIE_ON_NULL((configParser = parseFile("config.txt", "=")));
 
     if (parserTestErr(configParser)) {
         printErrAsStr(configParser);
@@ -168,9 +178,6 @@ int main(int argc, char** argv) {
 
     pthread_t* workers; // pool of worker threads
 
-    DIE_ON_NULL(workers = malloc(workerPoolSize * sizeof(pthread_t)));
-
-
     int fd_socket,
         fd_communication;
     int fd_num = 0;
@@ -190,7 +197,7 @@ int main(int argc, char** argv) {
 
     strncpy(saddr.sun_path, sockname, UNIX_PATH_MAX);
     saddr.sun_family = AF_UNIX;
-
+    puts(sockname);
     DIE_ON_NEG_ONE((fd_socket = socket(AF_UNIX, SOCK_STREAM, 0)));
     DIE_ON_NEG_ONE(bind(fd_socket, (struct sockaddr*)&saddr, sizeof saddr));
     DIE_ON_NEG_ONE(listen(fd_socket, MAX_CONN));
@@ -209,6 +216,10 @@ int main(int argc, char** argv) {
     threadArgs->store = store;
     threadArgs->pipeOut = w2mPipe[1];
 
+    //!
+    //unlink(sockname);
+
+    DIE_ON_NULL((workers = malloc(workerPoolSize * sizeof(pthread_t))));
     // create worker threads
     for (size_t i = 0; i < workerPoolSize; i++) {
         DIE_ON_NEG_ONE(pthread_create(&workers[i], NULL, &_startWorker, (void*)threadArgs));
@@ -217,6 +228,7 @@ int main(int argc, char** argv) {
     while (1) {
         rset = setsave; // re-initialize the read set
 
+       // puts("calling select...");
         // wait for a fd to be ready for read operation
         DIE_ON_NEG_ONE(select(fd_num + 1, &rset, NULL, NULL, NULL));
 
