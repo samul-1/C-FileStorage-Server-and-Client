@@ -239,7 +239,7 @@ int icl_hash_delete(icl_hash_t* ht, void* key, void (*free_key)(void*), void (*f
             }
             if (*free_key && curr->key) (*free_key)(curr->key);
             if (*free_data && curr->data) (*free_data)(curr->data);
-            ht->nentries++;
+            ht->nentries--; //? original was `ht->nentries++;`
             free(curr);
             return 0;
         }

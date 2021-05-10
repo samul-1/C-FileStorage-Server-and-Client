@@ -1,4 +1,6 @@
 #include "../include/clientApi.h"
+#include "../include/requestCode.h"
+#include "../include/responseCode.h"
 #include "../utils/scerrhand.h"
 #include <unistd.h>
 

@@ -12,12 +12,16 @@
 #include "../include/fileparser.h"
 #include "../utils/scerrhand.h"
 #include "../include/filesystemApi.h"
+#include "../include/requestCode.h"
 
 #define UNIX_PATH_MAX 108
 #define MAX_CONN 10
 #define MAX_MSG_LEN 6094
 #define MAX(a,b) (a) > (b) ? (a) : (b)
 #define MAX_TASKS 2048
+
+#define REQ_CODE_LEN 1
+#define PIPE_BUF_LEN 5
 
 #define DFL_POOLSIZE 10
 #define DFL_MAXSTORAGECAP 10000
@@ -59,11 +63,11 @@ void* _startWorker(void* args) {
     Upon being called, enters an infinite loop and
     reads tasks from the queue, processing them one at a time
     */
-    while (1) {
+    while (true) {
         int rdy_fd;
         ssize_t numRead;
-        char buf[MAX_MSG_LEN];
-        char pipeBuf[5];
+        char requestCodeBuf[REQ_CODE_LEN + 1];
+        char pipeBuf[PIPE_BUF_LEN];
 
         BoundedBuffer* taskBuf = ((struct _args*)args)->buf;
         int pipeOut = ((struct _args*)args)->pipeOut;
@@ -71,17 +75,54 @@ void* _startWorker(void* args) {
         // get ready fd from task queue
         dequeue(taskBuf, (void*)&rdy_fd, sizeof(rdy_fd));
 
-        DIE_ON_NEG_ONE((numRead = read(rdy_fd, buf, MAX_MSG_LEN)));
+        // read request code
+        DIE_ON_NEG_ONE((numRead = read(rdy_fd, requestCodeBuf, REQ_CODE_LEN)));  // todo handle error properly
+        long requestCode = atol(requestCodeBuf); // todo handle error
 
         if (numRead) {
-            DIE_ON_NEG_ONE(write(rdy_fd, "hey", 4));
-            sprintf(pipeBuf, "%d", rdy_fd); // convert int to string
+            switch (requestCode) {
+            case OPEN_FILE:
+                puts("open");
+                // handle open
+                break;
+            case CLOSE_FILE:
+                puts("close");
+                break;
+            case READ_FILE:
+                puts("read");
+                break;
+            case WRITE_FILE:
+                puts("write");
+                break;
+            case APPEND_TO_FILE:
+                puts("append");
+                break;
+            case LOCK_FILE:
+                puts("lock");
+                break;
+            case UNLOCK_FILE:
+                puts("unlock");
+                break;
+            case CLOSE_FILE:
+                puts("close");
+                break;
+            case REMOVE_FILE:
+                puts("remove");
+                break;
+            default:
+                puts("unknown");
+            }
+
+            // put client fd back in readset
+            snprintf(pipeBuf, PIPE_BUF_LEN, "%d", rdy_fd); // convert int to string
             DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, 5)); // tell manager we're done handling the request
         }
         else {
+            // todo handle exit routine
             puts("client left");
         }
     }
+
 }
 
 int main(int argc, char** argv) {
@@ -110,7 +151,7 @@ int main(int argc, char** argv) {
         sockname[BUFSIZ],
         logfilename[BUFSIZ];
 
-    // todo make variadic macro for this
+    // todo check that parameters are valid
     GET_LD_OR_EXIT(configParser, "MAXSTORAGECAP", maxStorageCap, DFL_MAXSTORAGECAP);
     GET_LD_OR_EXIT(configParser, "MAXFILECOUNT", maxFileCount, DFL_MAXFILECOUNT);
     GET_LD_OR_EXIT(configParser, "WORKERPOOLSIZE", workerPoolSize, DFL_POOLSIZE);

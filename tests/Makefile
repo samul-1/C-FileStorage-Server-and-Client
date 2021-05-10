@@ -7,7 +7,7 @@ CFLAGS = -Wall -g -std=c99 -pthread
 
 
 # The final executable program file, i.e. name of our program
-BIN = cachealgos
+BIN = multithread
 
 # Object files from which $BIN depends
 OBJS = ../obj/filesystemApi.o ../obj/log.o ../obj/boundedbuffer.o ../obj/cacheFns.o ../obj/icl_hash.o

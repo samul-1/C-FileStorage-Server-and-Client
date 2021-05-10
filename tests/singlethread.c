@@ -31,6 +31,8 @@ int main() {
     assert(openFileHandler(store, fn1, O_CREATE, &list, 1) == 0);
     assert(store->currFileNum == 1);
     assert(store->currStorageSize == 0);
+    assert(closeFileHandler(store, fn1, 1) == 0);
+
 
     errno = 0;
     // file creation fail (no O_CREATE)
@@ -38,6 +40,7 @@ int main() {
     assert(errno == EPERM);
 
     // write to file (without exceeding limit)
+    assert(openFileHandler(store, fn1, O_LOCK, &list, 124) == 0);
     assert(writeToFileHandler(store, fn1, "abcdefg", &list, 124) == 0);
     assert(store->currStorageSize == 7);
     // printFile(store, fn1);
@@ -57,10 +60,12 @@ int main() {
     assert(errno == ENOENT);
 
     // write to file (without exceeding limit)
+    assert(openFileHandler(store, fn2, O_LOCK, &list, 124) == 0);
     assert(writeToFileHandler(store, fn2, "abcdefg", &list, 124) == 0);
     assert(store->currStorageSize == 7);
 
     // write to file -- limit exceeded, eviction of file 2
+    assert(openFileHandler(store, fn3, O_LOCK, &list, 124) == 0);
     assert(writeToFileHandler(store, fn3, "abcd", &list, 124) == 0);
     //printf("%ld\n", store->currStorageSize);
     assert(store->currStorageSize == 4);
@@ -109,6 +114,7 @@ int main() {
     assert(removeFileHandler(store, fn1, &list, 21) == 0);
     // list contains 20->19
     //pthread_join(logTid, NULL);
+    puts("SUCCESS!");
     freeFdList(list);
     free(store);
 }

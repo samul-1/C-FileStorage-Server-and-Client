@@ -59,23 +59,21 @@ static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname,
     else {
         sprintf(eventBuf + strlen(eventBuf), " - PUT ON WAIT(code % d)\n", outcome);
     }
-    // puts(eventBuf);
     return enqueue(buffer, eventBuf);
 }
 
 // ! --------------------------------------------------------------------------
-static int pushFdToPendingQueue(FileNode_t* fptr, int fd) {
+static int pushFdToList(struct fdNode** listPtr, int fd) {
     /**
-     * @brief Puts a fd at the end of the waiting list for the given file.
+     * @brief Puts a fd at the end of the given list.
      * @note Assumes: (1) input is valid (treats bad input as a fatal error), \n
-     * (2) the caller has mutual exclusion over the file, \n
-     * (3) the fd isn't already present in the queue (would go against the semantics of `lockFile`)
+     * (2) the caller has mutual exclusion over the file to which the list belongs, \n
+     * (3) the fd isn't already present in the queue
      *
      * @return 0 on success, -1 if memory for the node couldn't be allocated
      *
      */
 
-    assert(fptr);
     assert(fd > 0);
 
     struct fdNode* newNode = malloc(sizeof(*newNode));
@@ -86,10 +84,7 @@ static int pushFdToPendingQueue(FileNode_t* fptr, int fd) {
     newNode->fd = fd;
     newNode->nextPtr = NULL;
 
-    struct fdNode** target = &(fptr->pendingLocks_hPtr);
-
-    fflush(NULL);
-
+    struct fdNode** target = (listPtr);
     while (*target) {
         target = &((*target)->nextPtr);
     }
@@ -97,25 +92,60 @@ static int pushFdToPendingQueue(FileNode_t* fptr, int fd) {
     return 0;
 }
 
-static int popNodeFromFdQueue(FileNode_t* fptr) {
+bool isFdInList(struct fdNode* listPtr, int fd) {
+    struct fdNode* currPtr = listPtr;
+    while (currPtr) {
+        if (currPtr->fd == fd) {
+            return true;
+        }
+        currPtr = currPtr->nextPtr;
+    }
+    return false;
+}
+
+static int popNodeFromFdQueue(struct fdNode** listPtr, int fd) {
     /**
-     * @brief Pops a fd from the top of the waiting list for the given file.
+     * @brief Pops `fd` from the list, or the element at the head of the list if `fd` is -1.
      * @note Assumes: (1) input is valid (treats bad input as a fatal error), (2) the caller has mutual exclusion over the file
      *
-     * @return the popped fd, or 0 if the list is empty
+     * @return the popped fd, or 0 if the list is empty or the requested fd isn't present
      *
      */
-    assert(fptr);
 
-    int ret = fptr->pendingLocks_hPtr ? fptr->pendingLocks_hPtr->fd : 0;
-
-    if (fptr->pendingLocks_hPtr) {
-        struct fdNode* tmp = fptr->pendingLocks_hPtr;
-        fptr->pendingLocks_hPtr = fptr->pendingLocks_hPtr->nextPtr;
-        free(tmp);
+    if (!(*listPtr)) {
+        return 0;
     }
 
-    return ret;
+    struct fdNode* ret = NULL;
+    if (fd == -1) {
+        ret = *listPtr;
+        *listPtr = (*listPtr)->nextPtr;
+    }
+    else {
+        struct fdNode* currPtr = *listPtr, * prevPtr = NULL;
+        while (currPtr) {
+            if (currPtr->fd == fd) {
+                ret = currPtr;
+                if (prevPtr) {
+                    prevPtr->nextPtr = currPtr->nextPtr;
+                }
+                else {
+                    *listPtr = currPtr->nextPtr;
+                }
+                break;
+            }
+            prevPtr = currPtr;
+            currPtr = currPtr->nextPtr;
+        }
+    }
+    if (!ret) {
+        return 0;
+    }
+
+    int retval = ret->fd;
+    free(ret);
+
+    return retval;
 }
 
 void printFdList(struct fdNode* h) {
@@ -152,11 +182,10 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
      *
      */
 
-     //printFileptr(fptr);
     assert(fptr);
     // !!!! can we do this without acquiring ordering?
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));
-    DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
+    DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex))); // ? this was unlock fptr->mutex: typo?
 
     //! permission checking needs to be done somewhere else
     while (fptr->activeReaders > 0) {
@@ -202,7 +231,6 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
     free(fptr->content);
 
     free(fptr);
-    //puts("DELETED");
     return 0; // ? errors?
 }
 
@@ -307,6 +335,8 @@ void printFile(const CacheStorage_t* store, const char* pathname) {
         printf("File: %s\nContent: %s\nSize: %zu\nLocked by: %d\nRefCount: %zu\nLastRef: %ld\n", f->pathname, f->content, f->contentSize, f->lockedBy, f->refCount, f->lastRef);
         printf("locked on it:\n");
         printFdList(f->pendingLocks_hPtr);
+        printf("open:\n");
+        printFdList(f->openDescriptors);
     }
     puts("-----------");
 }
@@ -400,10 +430,7 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
         return -1;
     }
 
-    if (alreadyExists) {
-        // ! ret = openFile(fPtr, lock, requestor);
-    }
-    else {
+    if (!alreadyExists) {
         if (store->currFileNum == store->maxFileNum) {
             FileNode_t* victim = getVictim(store);
             destroyFile(store, victim, notifyList);
@@ -418,12 +445,18 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
         if (lock) {
             fPtr->lockedBy = requestor;
         }
-        fPtr->open = true;
+
+        // ! remove fPtr->open = true;
 
         // nothing else will set `errno` from here on if everything is successful, so we can
         // omit error checking here as the return statement will check for errors
         addFileToStore(store, fPtr);
     }
+    else {
+
+    }
+    // add requestor to the list of clients that opened this file
+    DIE_ON_NEG_ONE(pushFdToList(&(fPtr->openDescriptors), requestor));
 
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
 
@@ -453,8 +486,8 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
 
 
-    // handle file locked by another client
-    if (fptr->lockedBy && fptr->lockedBy != requestor) {
+    // handle file locked by another client or file hasn't been opened by the client
+    if ((fptr->lockedBy && fptr->lockedBy != requestor) || !isFdInList(fptr->openDescriptors, requestor)) {
         errnosave = EACCES;
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
@@ -526,7 +559,6 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
 
      // todo add parameter of list of files to hold the evicted files
 
-     // todo check the last operation was open file
 
     CHECK_INPUT(store, pathname, requestor);
 
@@ -552,7 +584,8 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     // this can't be true at this time because it would mean two writers both have mutex over the store
     assert(!fptr->isBeingWritten);
 
-    if (fptr->lockedBy && fptr->lockedBy != requestor) {
+    // todo check the last operation was open file
+    if ((fptr->lockedBy && fptr->lockedBy != requestor) || !isFdInList(fptr->openDescriptors, requestor)) {
         errnosave = EACCES;
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
@@ -658,9 +691,11 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
     while (fptr->activeReaders > 0 || fptr->isBeingWritten) {
         DIE_ON_NZ(pthread_cond_wait(&(fptr->rwCond), &(fptr->mutex)));
     }
+    // todo check file was opened by requestor
+
     if (fptr->lockedBy && fptr->lockedBy != requestor) {
         // lock cannot be gained at the moment: place requestor on waiting queue and return
-        DIE_ON_NEG_ONE(pushFdToPendingQueue(fptr, requestor));
+        DIE_ON_NEG_ONE(pushFdToList(&(fptr->pendingLocks_hPtr), requestor));
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
 
@@ -729,7 +764,7 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
     if (!fptr->lockedBy || fptr->lockedBy == requestor) {
         // will be 0 if no clients are waiting to lock this file; otherwise it'll be the fd of the first client
         // that is stuck waiting to lock
-        int newLock = popNodeFromFdQueue(fptr);
+        int newLock = popNodeFromFdQueue(&(fptr->pendingLocks_hPtr), -1);
 
         // communicate new lock's fd back to caller
         *newLockFd = newLock; //? write log event LOCK for new lock
@@ -749,6 +784,7 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
     return errno ? -1 : 0;
 }
 
+// todo add a newlock argument and do the same as with unlockfile
 int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requestor) {
     /**
      * @brief Handles close-file requests from client.
@@ -789,8 +825,8 @@ int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requ
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     // actual close operation
-    // !!! check permissions
-    fptr->open = false;
+    // remove requestor from list of fd's that opened this file
+    popNodeFromFdQueue(&(fptr->openDescriptors), requestor);
     // end actual close operation
 
     // second critical section: we're done writing, we can wake up any pending readers and also release the lock over the store
