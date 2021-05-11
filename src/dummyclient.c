@@ -33,8 +33,9 @@ void* listenForMessages(void* args) {
 int main(int argc, char** argv) {
     int fd_socket; // file descriptor of the sockets
     struct sockaddr_un saddr; // contains the socket address
-    char readBuf[MAX_MSG_LEN], writeBuf[MAX_MSG_LEN];
-    pthread_t readThread; // thread that will execute the read and print of received messages
+    //char readBuf[MAX_MSG_LEN];
+    char writeBuf[MAX_MSG_LEN];
+    //pthread_t readThread; // thread that will execute the read and print of received messages
 
     strncpy(saddr.sun_path, SOCKNAME, UNIX_PATH_MAX); // set socket address
     saddr.sun_family = AF_UNIX; // set socket family

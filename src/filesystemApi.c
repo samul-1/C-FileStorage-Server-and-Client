@@ -47,6 +47,7 @@ static FileNode_t* getVictim(CacheStorage_t* store) {
 
 }
 
+// todo change to snprintf and refactor
 static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
     char eventBuf[EVENT_SLOT_SIZE];
     sprintf(eventBuf, "REQ: %d WO: %ld - %s %s ", requestor, pthread_self(), op, pathname);
@@ -618,7 +619,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     while (store->currStorageSize + newContentLen > store->maxStorageSize) {
         FileNode_t* victim = getVictim(store);
         assert(victim);
-        destroyFile(store, victim, notifyList);
+        destroyFile(store, victim, notifyList); // todo merge list with following list
         // todo send file content somehow and log eviction of file
     }
 

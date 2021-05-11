@@ -19,7 +19,7 @@ OBJDIR = obj
 SRCDIR = src
 HEADDIR = include
 # Libraries
-LIBS = -lpthread
+LIBS = -lpthread -lm
 
 HEADERS =
 
@@ -29,11 +29,11 @@ all:	$(BIN)
 
 # This default rule compiles the executable program
 $(BIN): $(SRCDIR)/$< $(OBJS)
-	$(CC) $(CFLAGS) $(LIBS) $(OBJS) $(SRCDIR)/$@.c -o $(BINDIR)/$@
+	$(CC) $(CFLAGS) $(OBJS) $(SRCDIR)/$@.c $(LIBS) -o $(BINDIR)/$@
 
 # This rule compiles each module into its object file
 $(OBJDIR)/%.o: $(SRCDIR)/%.c $(HEADDIR)/%.h
-	$(CC) -c $(CFLAGS) $(LIBS) $< -o $@
+	$(CC) -c $(CFLAGS) $< -o $@ $(LIBS)
 
 
 clean:

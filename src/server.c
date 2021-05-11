@@ -13,6 +13,10 @@
 #include "../utils/scerrhand.h"
 #include "../include/filesystemApi.h"
 #include "../include/requestCode.h"
+#include "../include/responseCode.h"
+#include "../utils/flags.h"
+#include "../utils/misc.h"
+#include <errno.h>
 
 #define UNIX_PATH_MAX 108
 #define MAX_CONN 10
@@ -34,6 +38,17 @@
 #define DFL_LOGBUFSIZE 2048
 #define DFL_REPLACEMENTALGO 0
 
+#define HANDLE_REQ_ERROR(fd) \
+switch(errno) {\
+case ENOENT:\
+    SEND_RESPONSE_CODE(fd, FILE_NOT_FOUND);\
+    break;\
+case EACCES:\
+    SEND_RESPONSE_CODE(fd, FORBIDDEN);\
+    break;\
+}
+
+
 #define GET_LD_OR_EXIT(p, k, v, d)\
     if((v = getLongValueFor(p, k, d)) == -1) {\
     perror("Error getting value for " #k);\
@@ -52,11 +67,15 @@
     exit(EXIT_FAILURE);\
 }
 
+#define SEND_RESPONSE_CODE(fd, code) ; // todo make this
+
 struct _args {
     BoundedBuffer* buf;
     CacheStorage_t* store;
     int pipeOut;
 };
+
+
 
 
 char* getRequestPayloadSegment(int fd) {
@@ -67,8 +86,7 @@ char* getRequestPayloadSegment(int fd) {
      * @note This function allocates memory on the heap that the caller must later call `free` on.
      *
      *
-     * @param fd The fd to read. Note: this function assumes the request code has been read already and the next \n
-     * bytes from the fd are the length of the pathname and the pathname of the file.
+     * @param fd The fd to read.
      *
      * @return A string containing the read segment
      *
@@ -101,11 +119,17 @@ void* _startWorker(void* args) {
         ssize_t numRead = 0;
         char requestCodeBuf[REQ_CODE_LEN] = "";
         char pipeBuf[PIPE_BUF_LEN] = "";
-        char metadataBuf[METADATA_SIZE + 1] = "";
         char* recvLine1, * recvLine2;
+        char flagBuf[2] = "";
+
+        struct fdNode* notifyList = NULL;
+        int newLock = 0;
 
         BoundedBuffer* taskBuf = ((struct _args*)args)->buf;
+        CacheStorage_t* store = ((struct _args*)args)->store;
         int pipeOut = ((struct _args*)args)->pipeOut;
+
+        bool putFdBack = true;
 
         // get ready fd from task queue
         dequeue(taskBuf, (void*)&rdy_fd, sizeof(rdy_fd));
@@ -115,41 +139,123 @@ void* _startWorker(void* args) {
 
         if (numRead) {
             long requestCode = atol(requestCodeBuf); // todo handle error
-
-            // get request filepath from client
+                // get request filepath from client
             recvLine1 = getRequestPayloadSegment(rdy_fd);
             //printf("read %s - reqn %ld\n", requestCodeBuf, requestCode);
             switch (requestCode) {
             case OPEN_FILE:
                 puts("open");
-                // todo get flags
-                // handle open
+                DIE_ON_NEG_ONE(read(rdy_fd, flagBuf, 1));
+                // todo check it's a valid flag with strtol and if not send BAD_REQUEST
+                long flags;
+                if (isNumber(flagBuf, &flags) != 0) { // not a valid flag
+                    SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
+                }
+                else {
+                    // todo check errors
+                    openFileHandler(store, recvLine1, flags, &notifyList, rdy_fd);
+                }
                 break;
             case CLOSE_FILE:
                 puts("close");
+                if (closeFileHandler(store, recvLine1, rdy_fd) == -1) {
+                    HANDLE_REQ_ERROR(rdy_fd);
+                }
+                else {
+                    SEND_RESPONSE_CODE(rdy_fd, OK);
+                }
                 break;
-            case READ_FILE:
+            case READ_FILE: // todo implement -R that reads random files from server
+                ;char* outBuf;
+                size_t readSize;
                 puts("read");
                 printf("client wants to read %s\n", recvLine1);
+                if (readFileHandler(store, recvLine1, (void**)&outBuf, &readSize, rdy_fd) == -1) {
+                    HANDLE_REQ_ERROR(rdy_fd);
+                }
+                else {
+                    SEND_RESPONSE_CODE(rdy_fd, OK);
+                    // todo send filenamelength,filename,contentlength,content
+                    free(outBuf);
+                }
                 break;
             case WRITE_FILE:
+                // todo check conditions for writing (i.e. O_CREATE|O_LOCK)
                 puts("write");
                 // get file content to write
                 recvLine2 = getRequestPayloadSegment(rdy_fd);
+                if (writeToFileHandler(store, recvLine1, recvLine2, &notifyList, rdy_fd) == -1) {
+                    HANDLE_REQ_ERROR(rdy_fd);
+                }
+                else {
+                    SEND_RESPONSE_CODE(rdy_fd, OK);
+                    while (notifyList) { // this is non-NULL if one or more files were deleted with clients waiting on them
+                        // there were clients waiting to acquire lock on the deleted file(s)
+                        // notify them that the file(s) don't exist (anymore)
+                        SEND_RESPONSE_CODE(notifyList->fd, FILE_NOT_FOUND);
+                        // convert int to string
+                        snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);
+                        // tell manager we're done handling the request of that client
+                        DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+                        notifyList = notifyList->nextPtr;
+                    }
+                }
                 break;
             case APPEND_TO_FILE:
                 puts("append");
+                //? same as write
                 // get file content to append
                 recvLine2 = getRequestPayloadSegment(rdy_fd);
                 break;
             case LOCK_FILE:
                 puts("lock");
+                int outcome = lockFileHandler(store, recvLine1, rdy_fd);
+                if (outcome == -1) {
+                    HANDLE_REQ_ERROR(rdy_fd);
+                }
+                else if (outcome == -2) {
+                    // client has to wait in order to acquire the lock
+                    putFdBack = false;
+                }
+                else {
+                    SEND_RESPONSE_CODE(rdy_fd, OK);
+                }
+                // todo if return code is -2, do `putFdBack = false;`
                 break;
             case UNLOCK_FILE:
+                if (unlockFileHandler(store, recvLine1, &newLock, rdy_fd) == -1) {
+                    HANDLE_REQ_ERROR(rdy_fd);
+                }
+                else {
+                    SEND_RESPONSE_CODE(rdy_fd, OK);
+                }
+                if (newLock) { // a client that was waiting on this file finally acquired the lock on it
+                    SEND_RESPONSE_CODE(newLock, OK);
+                    // convert int to string
+                    snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);
+                    // tell manager we're done handling the request of that client
+                    DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+                }
                 puts("unlock");
                 break;
             case REMOVE_FILE:
                 puts("remove");
+                if (removeFileHandler(store, recvLine1, &notifyList, rdy_fd) == -1) {
+                    HANDLE_REQ_ERROR(rdy_fd);
+                }
+                else {
+                    SEND_RESPONSE_CODE(rdy_fd, OK);
+                    while (notifyList) { // this is non-NULL if file was deleted with clients waiting on it
+                        // there were clients waiting to acquire lock on the deleted file
+                        // notify them that the file doesn't exist (anymore)
+                        SEND_RESPONSE_CODE(notifyList->fd, FILE_NOT_FOUND);
+                        // convert int to string
+                        snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);
+                        // tell manager we're done handling the request of that client
+                        DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+                        notifyList = notifyList->nextPtr;
+                    }
+                }
                 break;
             default:
                 puts("unknown");
@@ -160,12 +266,12 @@ void* _startWorker(void* args) {
                 free(recvLine2);
             }
 
-            // we're done handling this request -- put client fd back in readset
-
-            // convert int to string
-            snprintf(pipeBuf, PIPE_BUF_LEN, "%d", rdy_fd);
-            // tell manager we're done handling the request
-            DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+            if (putFdBack) { // we're done handling this request - put client fd back in readset
+                // convert int to string
+                snprintf(pipeBuf, PIPE_BUF_LEN, "%d", rdy_fd);
+                // tell manager we're done handling the request
+                DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+            }
         }
         else {
             // todo handle exit routine
@@ -199,7 +305,6 @@ int main(int argc, char** argv) {
         replacementAlgo;
 
     char
-        valBuf[MAX_VAL_LEN + 1], // holds value parsed from config file
         sockname[BUFSIZ],
         logfilename[BUFSIZ];
 
@@ -212,7 +317,7 @@ int main(int argc, char** argv) {
     GET_LD_OR_EXIT(configParser, "LOGBUFSIZE", logBufSize, DFL_LOGBUFSIZE);
     GET_LD_OR_EXIT(configParser, "REPLACEMENTALGO", replacementAlgo, DFL_REPLACEMENTALGO);
     GET_VAL_OR_EXIT(configParser, "SOCKETFILENAME", sockname, DFL_SOCKNAME);
-    GET_VAL_OR_EXIT(configParser, "LOGFILENAME", logfilename, DFL_LOGBUFSIZE);
+    GET_VAL_OR_EXIT(configParser, "LOGFILENAME", logfilename, DFL_LOGFILENAME);
 
 
     BoundedBuffer* taskBuffer; // used by manager thread to pass incoming requests to workers
