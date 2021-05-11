@@ -9,6 +9,8 @@
 #include <limits.h>
 #include <errno.h>
 
+#include "../include/clientApi.h"
+
 char* realpath(const char* restrict path,
     char* restrict resolved_path);
 

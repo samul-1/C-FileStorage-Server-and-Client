@@ -17,3 +17,5 @@
 `responseCode.h` - macros defining server status response codes
 
 `scerrhand.h` - macros for handling errors from system calls
+
+`misc.h` - miscellaneous utility functions
