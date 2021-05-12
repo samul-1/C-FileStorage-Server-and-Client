@@ -13,10 +13,12 @@ void* logFlusher(void* args) {
     DIE_ON_NULL((logFile = fopen(tArgs->pathname, "w")));
     char buf[EVENT_SLOT_SIZE];
     // todo manage exit condition
+    // todo print '[\n' for json
     while (true) {
         dequeue(store->logBuffer, buf, EVENT_SLOT_SIZE);
         fputs(buf, logFile);
         sleep(tArgs->interval);
     }
+    // todo print '\n]' for json
     // todo close logfile
 }

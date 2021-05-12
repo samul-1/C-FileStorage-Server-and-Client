@@ -48,8 +48,7 @@ case EACCES:\
     break;\
 }
 
-
-#define GET_LD_OR_EXIT(p, k, v, d)\
+#define GET_LONGVAL_OR_EXIT(p, k, v, d)\
     if((v = getLongValueFor(p, k, d)) == -1) {\
     perror("Error getting value for " #k);\
     if(p) {\
@@ -69,14 +68,16 @@ case EACCES:\
 
 #define SEND_RESPONSE_CODE(fd, code) ; // todo make this
 
-struct _args {
-    BoundedBuffer* buf;
-    CacheStorage_t* store;
-    int pipeOut;
-};
 
-
-
+#define NOTIFY_PENDING_CLIENTS(notifyList, notifyCode, pipeBuf, pipeOut)\
+while (notifyList) {\
+    SEND_RESPONSE_CODE(notifyList->fd, notifyCode);\
+    snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);\
+    DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));\
+    struct fdNode* tmpPtr = notifyList;\
+    notifyList = notifyList->nextPtr;\
+    free(tmpPtr);\
+}
 
 char* getRequestPayloadSegment(int fd) {
     /**
@@ -107,6 +108,28 @@ char* getRequestPayloadSegment(int fd) {
 
 }
 
+struct _args {
+    BoundedBuffer* buf;
+    CacheStorage_t* store;
+    int pipeOut;
+};
+
+volatile sig_atomic_t softExit = 0;
+volatile sig_atomic_t hardExit = 0;
+
+size_t updateClientCount(ssize_t delta) {
+    static pthread_mutex_t countMutex = PTHREAD_MUTEX_INITIALIZER;
+    static size_t count = 0;
+    size_t ret;
+
+    DIE_ON_NEG_ONE(pthread_mutex_lock(&countMutex));
+    count += delta;
+    ret = count;
+    DIE_ON_NEG_ONE(pthread_mutex_unlock(&countMutex));
+    return ret;
+}
+
+#define GET_CLIENT_COUNT updateClientCount(0)
 
 
 void* _startWorker(void* args) {
@@ -114,25 +137,34 @@ void* _startWorker(void* args) {
     Upon being called, enters an infinite loop and
     reads tasks from the queue, processing them one at a time
     */
+    BoundedBuffer* taskBuf = ((struct _args*)args)->buf;
+    CacheStorage_t* store = ((struct _args*)args)->store;
+    int pipeOut = ((struct _args*)args)->pipeOut;
+
     while (true) {
-        int rdy_fd = 0;
+        int
+            rdy_fd = 0,
+            newLock = 0;
+
         ssize_t numRead = 0;
-        char requestCodeBuf[REQ_CODE_LEN] = "";
-        char pipeBuf[PIPE_BUF_LEN] = "";
-        char* recvLine1, * recvLine2;
-        char flagBuf[2] = "";
+        bool putFdBack = true;
+
+        char
+            requestCodeBuf[REQ_CODE_LEN] = "",
+            pipeBuf[PIPE_BUF_LEN] = "",
+            flagBuf[2] = "";
+        char
+            * recvLine1,
+            * recvLine2;
 
         struct fdNode* notifyList = NULL;
-        int newLock = 0;
-
-        BoundedBuffer* taskBuf = ((struct _args*)args)->buf;
-        CacheStorage_t* store = ((struct _args*)args)->store;
-        int pipeOut = ((struct _args*)args)->pipeOut;
-
-        bool putFdBack = true;
 
         // get ready fd from task queue
         dequeue(taskBuf, (void*)&rdy_fd, sizeof(rdy_fd));
+
+        if (!rdy_fd) {
+            break; // termination message
+        }
 
         // read request code
         DIE_ON_NEG_ONE((numRead = read(rdy_fd, requestCodeBuf, REQ_CODE_LEN)));  // todo handle error properly
@@ -146,7 +178,6 @@ void* _startWorker(void* args) {
             case OPEN_FILE:
                 puts("open");
                 DIE_ON_NEG_ONE(read(rdy_fd, flagBuf, 1));
-                // todo check it's a valid flag with strtol and if not send BAD_REQUEST
                 long flags;
                 if (isNumber(flagBuf, &flags) != 0) { // not a valid flag
                     SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
@@ -154,6 +185,9 @@ void* _startWorker(void* args) {
                 else {
                     // todo check errors
                     openFileHandler(store, recvLine1, flags, &notifyList, rdy_fd);
+                    // if there were clients waiting to acquire lock on the deleted file(s) notify them
+                    //that the file(s) don't exist (anymore)
+                    NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
                 }
                 break;
             case CLOSE_FILE:
@@ -166,7 +200,8 @@ void* _startWorker(void* args) {
                 }
                 break;
             case READ_FILE: // todo implement -R that reads random files from server
-                ;char* outBuf;
+                ;
+                char* outBuf;
                 size_t readSize;
                 puts("read");
                 printf("client wants to read %s\n", recvLine1);
@@ -182,23 +217,16 @@ void* _startWorker(void* args) {
             case WRITE_FILE:
                 // todo check conditions for writing (i.e. O_CREATE|O_LOCK)
                 puts("write");
-                // get file content to write
+                // get content to write
                 recvLine2 = getRequestPayloadSegment(rdy_fd);
                 if (writeToFileHandler(store, recvLine1, recvLine2, &notifyList, rdy_fd) == -1) {
                     HANDLE_REQ_ERROR(rdy_fd);
                 }
                 else {
                     SEND_RESPONSE_CODE(rdy_fd, OK);
-                    while (notifyList) { // this is non-NULL if one or more files were deleted with clients waiting on them
-                        // there were clients waiting to acquire lock on the deleted file(s)
-                        // notify them that the file(s) don't exist (anymore)
-                        SEND_RESPONSE_CODE(notifyList->fd, FILE_NOT_FOUND);
-                        // convert int to string
-                        snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);
-                        // tell manager we're done handling the request of that client
-                        DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
-                        notifyList = notifyList->nextPtr;
-                    }
+                    // if there were clients waiting to acquire lock on the deleted file(s),
+                    // notify them that the file(s) don't exist (anymore)
+                    NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
                 }
                 break;
             case APPEND_TO_FILE:
@@ -220,7 +248,6 @@ void* _startWorker(void* args) {
                 else {
                     SEND_RESPONSE_CODE(rdy_fd, OK);
                 }
-                // todo if return code is -2, do `putFdBack = false;`
                 break;
             case UNLOCK_FILE:
                 if (unlockFileHandler(store, recvLine1, &newLock, rdy_fd) == -1) {
@@ -228,13 +255,13 @@ void* _startWorker(void* args) {
                 }
                 else {
                     SEND_RESPONSE_CODE(rdy_fd, OK);
-                }
-                if (newLock) { // a client that was waiting on this file finally acquired the lock on it
-                    SEND_RESPONSE_CODE(newLock, OK);
-                    // convert int to string
-                    snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);
-                    // tell manager we're done handling the request of that client
-                    DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+                    if (newLock) { // a client that was waiting on this file finally acquired the lock on it
+                        SEND_RESPONSE_CODE(newLock, OK);
+                        // convert int to string
+                        snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);
+                        // tell manager we're done handling the request of that client
+                        DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+                    }
                 }
                 puts("unlock");
                 break;
@@ -245,22 +272,17 @@ void* _startWorker(void* args) {
                 }
                 else {
                     SEND_RESPONSE_CODE(rdy_fd, OK);
-                    while (notifyList) { // this is non-NULL if file was deleted with clients waiting on it
-                        // there were clients waiting to acquire lock on the deleted file
-                        // notify them that the file doesn't exist (anymore)
-                        SEND_RESPONSE_CODE(notifyList->fd, FILE_NOT_FOUND);
-                        // convert int to string
-                        snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);
-                        // tell manager we're done handling the request of that client
-                        DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
-                        notifyList = notifyList->nextPtr;
-                    }
+                    // if there were clients waiting to acquire lock on the deleted file
+                    // notify them that the file doesn't exist (anymore)
+                    NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
                 }
                 break;
             default:
                 puts("unknown");
+                SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
             }
 
+            // free the resources allocated to handle the request
             free(recvLine1);
             if (requestCode == WRITE_FILE || requestCode == APPEND_TO_FILE) {
                 free(recvLine2);
@@ -274,12 +296,20 @@ void* _startWorker(void* args) {
             }
         }
         else {
-            // todo handle exit routine
             puts("client left");
+            // releases lock from all files the client had locked, and gets list of all clients that were "first in line" waiting to lock the file(s)
+            DIE_ON_NEG_ONE(clientExitHandler(store, &notifyList, rdy_fd));
+            // if the client had locked one or more files, and any of them had other clients blocked waiting to acquire the lock,
+            // notify them that the operation has been completed successfully (they acquired the lock)
+            NOTIFY_PENDING_CLIENTS(notifyList, OK, pipeBuf, pipeOut);
+
+            size_t cnt = updateClientCount(-1);
+            printf("number of connected clients: %zu", cnt);
+            DIE_ON_NEG_ONE(write(pipeOut, "0", strlen("0"))); // when the manager reads "0", he'll know a client left
         }
     }
-
 }
+
 
 int main(int argc, char** argv) {
     /*
@@ -309,13 +339,13 @@ int main(int argc, char** argv) {
         logfilename[BUFSIZ];
 
     // todo check that parameters are valid
-    GET_LD_OR_EXIT(configParser, "MAXSTORAGECAP", maxStorageCap, DFL_MAXSTORAGECAP);
-    GET_LD_OR_EXIT(configParser, "MAXFILECOUNT", maxFileCount, DFL_MAXFILECOUNT);
-    GET_LD_OR_EXIT(configParser, "WORKERPOOLSIZE", workerPoolSize, DFL_POOLSIZE);
-    GET_LD_OR_EXIT(configParser, "SOCKETBACKLOG", socketBacklog, DFL_SOCKETBACKLOG);
-    GET_LD_OR_EXIT(configParser, "TASKBUFSIZE", taskBufSize, DFL_TASKBUFSIZE);
-    GET_LD_OR_EXIT(configParser, "LOGBUFSIZE", logBufSize, DFL_LOGBUFSIZE);
-    GET_LD_OR_EXIT(configParser, "REPLACEMENTALGO", replacementAlgo, DFL_REPLACEMENTALGO);
+    GET_LONGVAL_OR_EXIT(configParser, "MAXSTORAGECAP", maxStorageCap, DFL_MAXSTORAGECAP);
+    GET_LONGVAL_OR_EXIT(configParser, "MAXFILECOUNT", maxFileCount, DFL_MAXFILECOUNT);
+    GET_LONGVAL_OR_EXIT(configParser, "WORKERPOOLSIZE", workerPoolSize, DFL_POOLSIZE);
+    GET_LONGVAL_OR_EXIT(configParser, "SOCKETBACKLOG", socketBacklog, DFL_SOCKETBACKLOG);
+    GET_LONGVAL_OR_EXIT(configParser, "TASKBUFSIZE", taskBufSize, DFL_TASKBUFSIZE);
+    GET_LONGVAL_OR_EXIT(configParser, "LOGBUFSIZE", logBufSize, DFL_LOGBUFSIZE);
+    GET_LONGVAL_OR_EXIT(configParser, "REPLACEMENTALGO", replacementAlgo, DFL_REPLACEMENTALGO);
     GET_VAL_OR_EXIT(configParser, "SOCKETFILENAME", sockname, DFL_SOCKNAME);
     GET_VAL_OR_EXIT(configParser, "LOGFILENAME", logfilename, DFL_LOGFILENAME);
 
@@ -370,6 +400,8 @@ int main(int argc, char** argv) {
         DIE_ON_NEG_ONE(pthread_create(&workers[i], NULL, &_startWorker, (void*)threadArgs));
     }
 
+    // todo run the log flusher
+
     while (true) {
         rset = setsave; // re-initialize the read set
 
@@ -382,17 +414,33 @@ int main(int argc, char** argv) {
                 if (i == w2mPipe[0]) { // worker is done with a request
                     // add file descriptor back into readset
                     DIE_ON_NEG_ONE(read(i, pipebuf, PIPE_BUF_LEN));
-                    FD_SET(atol(pipebuf), &setsave);
-                    fd_num = MAX(atol(pipebuf), fd_num);
+
+                    //! remove after debug
+                    if (atol(pipebuf) == 0) {
+                        printf("client exited: curr num of clients %zu\n", GET_CLIENT_COUNT);
+                    }
+                    //! ---
+                    if (atol(pipebuf) != 0) {
+                        FD_SET(atol(pipebuf), &setsave);
+                        fd_num = MAX(atol(pipebuf), fd_num);
+                    }
+                    else if (softExit && GET_CLIENT_COUNT == 0) { // reding 0 from pipe means a client left
+                        goto cleanup; // using `goto` to break out of nested loops
+                    }
                 }
                 else if (i == fd_socket) { // first request from a new client
-                    // todo if SIGINT was received, we need to reject the connection
                     puts("new client connected");
-
                     DIE_ON_NEG_ONE((fd_communication = accept(fd_socket, NULL, 0))); // accept incoming connection
-                    FD_SET(fd_communication, &setsave);
 
-                    fd_num = MAX(fd_communication, fd_num);
+                    if (softExit) { // reject connection immediately if we're soft exiting the server
+                        DIE_ON_NEG_ONE(close(fd_communication));
+                        puts("rejected connection because we're soft exiting");
+                    }
+                    else {
+                        FD_SET(fd_communication, &setsave);
+
+                        fd_num = MAX(fd_communication, fd_num);
+                    }
                 }
                 else { // new request from already connected client
                     void* fd = &i;
@@ -407,4 +455,23 @@ int main(int argc, char** argv) {
             }
         }
     }
+cleanup:
+    // send termination message(s) to workers
+    int term = 0;
+    for (size_t i = 0; i < workerPoolSize; i++) {
+        enqueue(taskBuffer, (void*)&term);
+    }
+
+    // todo send termination message to log flusher thread
+
+    // wait for all threads to die
+    for (size_t i = 0; i < workerPoolSize; i++) {
+        DIE_ON_NEG_ONE(pthread_join(workers[i], NULL));
+    }
+
+    // todo wait for the log flusher
+
+    // release resources on the heap
+    destroyBoundedBuffer(taskBuffer);
+    // todo make destroyStorage in filesystemApi.c
 }

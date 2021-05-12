@@ -85,7 +85,7 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
 int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* newContent, struct fdNode** notifyList, const int requestor);
 int lockFileHandler(CacheStorage_t* store, const char* pathname, const int requestor);
 int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockFd, const int requestor);
-
+int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const int requestor);
 int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requestor);
 int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode** notifyList, const int requestor);
 

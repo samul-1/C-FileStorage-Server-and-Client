@@ -396,7 +396,7 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
      * @param store A pointer to the file storage to use
      * @param pathname Absolute path of the file to open or create
      * @param mode See flags
-     * @param requestor Pid of the process requesting the operation
+     * @param requestor Fd of the process requesting the operation
      *
      * @return 0 on success, -1 on error (sets `errno`)
      *
@@ -516,6 +516,7 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
         errnosave = ENOMEM;
     }
     else {
+        // todo memcpy
         strncpy(ret, fptr->content, fptr->contentSize);
         ret[fptr->contentSize] = '\0'; // ? necessary?
 
@@ -549,7 +550,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
      * @param store A pointer to the storage containing the file
      * @param pathname Absolute pathname of the file
      * @param content Content to write or append to file
-     * @param requestor Pid of the requesting client process
+     * @param requestor Fd of the requesting client process
      *
      * @return 0 on success, -1 on error (sets `errno`)
      *
@@ -631,6 +632,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     if (tmp) {
         fptr->content = tmp;
         fptr->content[oldLen] = '\0';
+        // todo memcpy
         strncat(fptr->content, newContent, newContentLen);
         fptr->contentSize += newContentLen;
     }
@@ -661,7 +663,7 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
      *
      * @param store A pointer to the storage containing the file
      * @param pathname Absolute pathname of the file
-     * @param requestor Pid of the requesting client process
+     * @param requestor Fd of the requesting client process
      *
      * @return 0 on success, -1 on error (sets `errno`), -2 if the file could not be locked at the moment and the requestor \n
      * has been placed on the pending lock queue of the file.
@@ -721,16 +723,71 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
     return 0;
 }
 
+// todo test
+int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const int requestor) {
+    /**
+     * @brief Routine called each time a client closes connection. Releases lock from all files that the client \n
+     * had locked and notifies the first clients in line to acquire the lock over those files.
+     *
+     * @param store A pointer to the storage containing the file
+     * @param notifyList output parameter: pointer to a list of fd's who are blocked waiting to acquire lock on a file \n
+     * whose lock was just released by the client's exit
+     * @param requestor Fd of the requesting client process
+     *
+     * @return 0 on success, -1 on error (sets `errno`)
+     *
+     * `errno` values: \n
+     * `EINVAL` invalid parameters
+     */
+    if (!store || requestor <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
+
+    FileNode_t* currPtr = store->hPtr;
+    while (currPtr) {
+        DIE_ON_NZ(pthread_mutex_lock(&(currPtr->ordering)));
+        DIE_ON_NZ(pthread_mutex_lock(&(currPtr->mutex)));
+
+        while (currPtr->activeReaders > 0 || currPtr->isBeingWritten) {
+            DIE_ON_NZ(pthread_cond_wait(&(currPtr->rwCond), &(currPtr->mutex)));
+        }
+
+        if (currPtr->lockedBy == requestor) {
+            // will be 0 if no clients are waiting to lock this file; otherwise it'll be the fd of the
+            // first client that is stuck waiting to lock
+            int newLock = popNodeFromFdQueue(&(currPtr->pendingLocks_hPtr), -1); // ? what happens if next in line leaves too?
+
+            // communicate new lock's fd back to caller
+            pushFdToList(notifyList, newLock);
+
+            currPtr->lockedBy = newLock;
+        }
+
+        // todo remove client fd from pending list(s)
+
+        DIE_ON_NZ(pthread_mutex_unlock(&(currPtr->ordering)));
+        DIE_ON_NZ(pthread_mutex_unlock(&(currPtr->mutex)));
+
+        currPtr = currPtr->nextPtr;
+    }
+
+    DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
+    return 0;
+}
+
 int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockFd, const int requestor) {
     /**
      * @brief Handles unlock-file requests from client. Wakes up a thread (if any) that was waiting for \n
-     *  the file to be unlocked.
+     * the file to be unlocked.
      *
      * @param store A pointer to the storage containing the file
      * @param pathname Absolute pathname of the file
      * @param newLockFd output parameter: pointer to int that will contain the fd of the new client that got the lock \n
      * or 0 if no clients were waiting to lock the file
-     * @param requestor Pid of the requesting client process
+     * @param requestor Fd of the requesting client process
      *
      * @return 0 on success, -1 on error (sets `errno`)
      *
@@ -762,7 +819,7 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
     }
     UPDATE_CACHE_BITS(fptr);
 
-    if (!fptr->lockedBy || fptr->lockedBy == requestor) {
+    if (fptr->lockedBy == requestor) {
         // will be 0 if no clients are waiting to lock this file; otherwise it'll be the fd of the first client
         // that is stuck waiting to lock
         int newLock = popNodeFromFdQueue(&(fptr->pendingLocks_hPtr), -1);
@@ -792,7 +849,7 @@ int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requ
      *
      * @param store A pointer to the storage containing the file
      * @param pathname Absolute pathname of the file
-     * @param requestor Pid of the requesting client process
+     * @param requestor Fd of the requesting client process
      *
      * @return 0 on success, -1 on error (sets `errno`)
      *
@@ -846,7 +903,7 @@ int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode
      *
      * @param store A pointer to the storage containing the file
      * @param pathname Absolute pathname of the file
-     * @param requestor Pid of the requesting client process
+     * @param requestor Fd of the requesting client process
      *
      * @return 0 on success, -1 on error (sets `errno`)
      *
