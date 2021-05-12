@@ -8,6 +8,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
+#include "../include/requestCode.h"
 
 #define SOCKNAME "serversocket.sk"
 #define UNIX_PATH_MAX 108
@@ -65,26 +66,125 @@ int main(int argc, char** argv) {
     while (1) {
         memset(writeBuf, 0, MAX_MSG_LEN);
         //scanf("%s", writeBuf); // type next message
+        char sendBuf[MAX_MSG_LEN * 2] = "";
+        char flagbuf[2] = "";
 
         fgets(writeBuf, MAX_MSG_LEN, stdin);
-        if (!strncmp(writeBuf, "exit", 5)) { // close on "exit" message
+        if (!strncmp(writeBuf, "exit", 4)) { // close on "exit" message
             break;
         }
-        else {
-
-            puts("you typed:");
-            puts(writeBuf);
-            size_t len = strlen(writeBuf);
-            char tmp[10] = "";
-            sprintf(tmp, "3%08zu", len - 1);
-            char sendBuf[MAX_MSG_LEN] = "";
-            strncpy(sendBuf, tmp, 9);
-            strncpy((sendBuf + 9), writeBuf, strlen(writeBuf) - 1);
-            puts("server gonna see:");
+        else if (!strncmp(writeBuf, "open", 4)) {
+            sendBuf[0] = '0' + OPEN_FILE;
             puts(sendBuf);
-            write(fd_socket, sendBuf, strlen(sendBuf)); // write to socket
-            //write(fd_socket, "300000005abcde", 14); // write to socket
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+            memset(sendBuf, 0, 2 * MAX_MSG_LEN);
+
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+            sprintf(sendBuf, "%08ld%s%d", strlen(writeBuf), writeBuf, 1);
+            puts(sendBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf));
         }
+        else if (!strncmp(writeBuf, "write", 5)) {
+            sendBuf[0] = '0' + WRITE_FILE;
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+            memset(sendBuf, 0, 2 * MAX_MSG_LEN);
+
+            // name
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+            sprintf(sendBuf, "%08ld%s", strlen(writeBuf), writeBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+            // content
+            memset(sendBuf, 0, 2 * MAX_MSG_LEN);
+
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+            sprintf(sendBuf, "%08ld%s", strlen(writeBuf), writeBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+        }
+        else if (!strncmp(writeBuf, "lock", 4)) {
+            sendBuf[0] = '0' + LOCK_FILE;
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+            memset(sendBuf, 0, 2 * MAX_MSG_LEN);
+
+            // name
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+            sprintf(sendBuf, "%08ld%s", strlen(writeBuf), writeBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf));
+        }
+        else if (!strncmp(writeBuf, "unlock", 6)) {
+            sendBuf[0] = '0' + UNLOCK_FILE;
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+            memset(sendBuf, 0, 2 * MAX_MSG_LEN);
+
+            // name
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+            sprintf(sendBuf, "%08ld%s", strlen(writeBuf), writeBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf));
+        }
+        else if (!strncmp(writeBuf, "close", 5)) {
+            sendBuf[0] = '0' + CLOSE_FILE;
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+            memset(sendBuf, 0, 2 * MAX_MSG_LEN);
+
+            // name
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+            sprintf(sendBuf, "%08ld%s", strlen(writeBuf), writeBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf));
+        }
+        else if (!strncmp(writeBuf, "read", 4)) {
+            sendBuf[0] = '0' + READ_FILE;
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+            memset(sendBuf, 0, 2 * MAX_MSG_LEN);
+
+            // name
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+            sprintf(sendBuf, "%08ld%s", strlen(writeBuf), writeBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf));
+        }
+        else if (!strncmp(writeBuf, "remove", 6)) {
+            sendBuf[0] = '0' + REMOVE_FILE;
+            write(fd_socket, sendBuf, strlen(sendBuf));
+
+            memset(sendBuf, 0, 2 * MAX_MSG_LEN);
+
+            // name
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+            sprintf(sendBuf, "%08ld%s", strlen(writeBuf), writeBuf);
+            write(fd_socket, sendBuf, strlen(sendBuf));
+        }
+
+
+
+        // else {
+
+        //     puts("you typed:");
+        //     puts(writeBuf);
+        //     size_t len = strlen(writeBuf);
+        //     char tmp[10] = "";
+        //     sprintf(tmp, "3%08zu", len - 1);
+        //     char sendBuf[MAX_MSG_LEN] = "";
+        //     strncpy(sendBuf, tmp, 9);
+        //     strncpy((sendBuf + 9), writeBuf, strlen(writeBuf) - 1);
+        //     puts("server gonna see:");
+        //     puts(sendBuf);
+        //     write(fd_socket, sendBuf, strlen(sendBuf)); // write to socket
+        //     //write(fd_socket, "300000005abcde", 14); // write to socket
+        // }
     }
     //pthread_kill(readThread, SIGINT); // end read thread
     close(fd_socket); // close communication

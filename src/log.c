@@ -20,6 +20,8 @@ void* logFlusher(void* args) {
             break;
         }
         fputs(buf, logFile);
+        fflush(logFile);
+
     }
     snprintf(buf, 2, "]");
     fputs(buf, logFile);

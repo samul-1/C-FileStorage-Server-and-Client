@@ -154,7 +154,7 @@ int dequeue(BoundedBuffer* buf, void* dest, size_t destSize) {
     }
 
     if (buf->numElements == buf->capacity - 1) { // buffer was full before we dequeued
-        DIE_ON_NZ(pthread_cond_signal(&(buf->full))); // wake up a producer thread (if any)
+        DIE_ON_NZ(pthread_cond_broadcast(&(buf->full))); // wake up a producer thread (if any)
     }
 
     DIE_ON_NZ(pthread_mutex_unlock(&(buf->mutex))); // waive mutual exclusion access
@@ -242,7 +242,7 @@ int enqueue(BoundedBuffer* buf, void* data) {
     buf->numElements++;
 
     if (buf->numElements == 1) { // buffer was empty before we enqueued
-        DIE_ON_NZ(pthread_cond_signal(&(buf->empty))); // wake up a consumer thread (if any)
+        DIE_ON_NZ(pthread_cond_broadcast(&(buf->empty))); // wake up a consumer thread (if any)
     }
 
     DIE_ON_NZ(pthread_mutex_unlock(&(buf->mutex))); // waive mutual exclusion access

@@ -5,7 +5,6 @@
 #include <errno.h>
 #include "../utils/flags.h"
 #include <unistd.h>
-#include "../utils/scerrhand.h"
 #include "../include/log.h"
 #include "../include/boundedbuffer.h"
 

@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200112L
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
@@ -16,6 +18,7 @@
 #include "../include/requestCode.h"
 #include "../include/responseCode.h"
 #include "../utils/flags.h"
+#include "../include/log.h"
 #include "../utils/misc.h"
 #include <errno.h>
 
@@ -71,7 +74,7 @@ case EACCES:\
     exit(EXIT_FAILURE);\
 }
 
-#define SEND_RESPONSE_CODE(fd, code) ; // todo make this
+#define SEND_RESPONSE_CODE(fd, code) printf("sending response code %d\n", code) // todo make this
 
 
 #define NOTIFY_PENDING_CLIENTS(notifyList, notifyCode, pipeBuf, pipeOut)\
@@ -122,16 +125,18 @@ struct workerArgs {
 volatile sig_atomic_t softExit = 0;
 volatile sig_atomic_t hardExit = 0;
 
-void softExitHandler(void) {
-    softExit = 1;
-}
-void hardExitHandler(void) {
-    hardExit = 1;
+
+void hardExitHandler(int sig) {
+    if (sig == SIGINT || sig == SIGHUP) {
+        softExit = 1;
+    }
+    else
+        hardExit = 1;
 }
 
-size_t updateClientCount(ssize_t delta) {
+ssize_t updateClientCount(ssize_t delta) {
     static pthread_mutex_t countMutex = PTHREAD_MUTEX_INITIALIZER;
-    static size_t count = 0;
+    static ssize_t count = 0;
     size_t ret;
 
     DIE_ON_NEG_ONE(pthread_mutex_lock(&countMutex));
@@ -162,7 +167,7 @@ void* _startWorker(void* args) {
         bool putFdBack = true;
 
         char
-            requestCodeBuf[REQ_CODE_LEN] = "",
+            requestCodeBuf[REQ_CODE_LEN + 1] = "",
             pipeBuf[PIPE_BUF_LEN] = "",
             flagBuf[2] = "";
         char
@@ -172,8 +177,7 @@ void* _startWorker(void* args) {
         struct fdNode* notifyList = NULL;
 
         // get ready fd from task queue
-        dequeue(taskBuf, (void*)&rdy_fd, sizeof(rdy_fd));
-
+        DIE_ON_NEG_ONE(dequeue(taskBuf, (void*)&rdy_fd, sizeof(rdy_fd)));
         if (!rdy_fd) {
             break; // termination message
         }
@@ -183,12 +187,13 @@ void* _startWorker(void* args) {
 
         if (numRead) {
             long requestCode = atol(requestCodeBuf); // todo handle error
-                // get request filepath from client
-            recvLine1 = getRequestPayloadSegment(rdy_fd);
             //printf("read %s - reqn %ld\n", requestCodeBuf, requestCode);
+
+            // get request filepath from client
+            recvLine1 = getRequestPayloadSegment(rdy_fd);
             switch (requestCode) {
             case OPEN_FILE:
-                puts("open");
+                printf("open %s\n", recvLine1);
                 DIE_ON_NEG_ONE(read(rdy_fd, flagBuf, 1));
                 long flags;
                 if (isNumber(flagBuf, &flags) != 0) { // not a valid flag
@@ -197,6 +202,7 @@ void* _startWorker(void* args) {
                 else {
                     // todo check errors
                     openFileHandler(store, recvLine1, flags, &notifyList, rdy_fd);
+                    SEND_RESPONSE_CODE(rdy_fd, OK);
                     // if there were clients waiting to acquire lock on the deleted file(s) notify them
                     //that the file(s) don't exist (anymore)
                     NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
@@ -293,6 +299,10 @@ void* _startWorker(void* args) {
                 puts("unknown");
                 SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
             }
+            puts("Store:");
+            printStore(store);
+            puts("Affected file:");
+            printFile(store, recvLine1);
 
             // free the resources allocated to handle the request
             free(recvLine1);
@@ -315,11 +325,11 @@ void* _startWorker(void* args) {
             // notify them that the operation has been completed successfully (they acquired the lock)
             NOTIFY_PENDING_CLIENTS(notifyList, OK, pipeBuf, pipeOut);
 
-            size_t cnt = updateClientCount(-1);
-            printf("number of connected clients: %zu", cnt);
+            ssize_t cnt = updateClientCount(-1);
             DIE_ON_NEG_ONE(write(pipeOut, "0", strlen("0"))); // when the manager reads "0", he'll know a client left
         }
     }
+    pthread_exit(NULL);
 }
 
 
@@ -361,6 +371,21 @@ int main(int argc, char** argv) {
     GET_VAL_OR_EXIT(configParser, "LOGFILENAME", logfilename, DFL_LOGFILENAME);
 
     // todo register sigaction
+    //!
+    struct sigaction sig_handler;
+    memset(&sig_handler, 0, sizeof(sig_handler));
+    sig_handler.sa_handler = hardExitHandler;
+    sigset_t handlerMask;
+    sigemptyset(&handlerMask);
+    sigaddset(&handlerMask, SIGINT);
+    sigaddset(&handlerMask, SIGHUP);
+    sigaddset(&handlerMask, SIGTSTP);
+    sig_handler.sa_mask = handlerMask;
+
+    DIE_ON_NEG_ONE(sigaction(SIGINT, &sig_handler, NULL));
+    DIE_ON_NEG_ONE(sigaction(SIGHUP, &sig_handler, NULL));
+    DIE_ON_NEG_ONE(sigaction(SIGTSTP, &sig_handler, NULL));
+
 
     BoundedBuffer* taskBuffer; // used by manager thread to pass incoming requests to workers
     CacheStorage_t* store; // in-memory file storage system
@@ -380,9 +405,15 @@ int main(int argc, char** argv) {
         rset,    // read set
         setsave; // copy of the original set for re-initialization
 
+
     DIE_ON_NULL((store = allocStorage(maxFileCount, maxStorageCap, replacementAlgo)));
     DIE_ON_NULL((taskBuffer = allocBoundedBuffer(MAX_TASKS, sizeof(int))));
     DIE_ON_NEG_ONE(pipe(w2mPipe)); // open worker-to-manager pipe
+
+    // todo refactor
+    pthread_t logTid;
+    struct logFlusherArgs logArgs = { "logs.json", store };
+    DIE_ON_NZ(pthread_create(&logTid, NULL, logFlusher, (void*)&logArgs));
 
     strncpy(saddr.sun_path, sockname, UNIX_PATH_MAX);
     saddr.sun_family = AF_UNIX;
@@ -392,6 +423,7 @@ int main(int argc, char** argv) {
     DIE_ON_NEG_ONE(listen(fd_socket, MAX_CONN));
 
     puts("listening");
+    printf("initial number of clients %zu\n", GET_CLIENT_COUNT);
 
     fd_num = MAX(fd_socket, fd_num);
 
@@ -418,8 +450,10 @@ int main(int argc, char** argv) {
         rset = setsave; // re-initialize the read set
 
         // wait for a fd to be ready for read operation
+        puts("selecting");
         if ((select(fd_num + 1, &rset, NULL, NULL, NULL)) == -1) {
             if (errno == EINTR) {
+                puts("interrupted");
                 continue;
             }
             else {
@@ -427,6 +461,7 @@ int main(int argc, char** argv) {
                 return EXIT_FAILURE;
             }
         }
+        puts("selected");
 
         // loop through the file descriptors
         for (size_t i = 0; i < fd_num + 1; i++) {
@@ -458,11 +493,14 @@ int main(int argc, char** argv) {
                     }
                     else {
                         FD_SET(fd_communication, &setsave);
+                        updateClientCount(1);
+                        printf("number of clients %zu\n", GET_CLIENT_COUNT);
 
                         fd_num = MAX(fd_communication, fd_num);
                     }
                 }
                 else { // new request from already connected client
+                    puts("new request");
                     void* fd = &i;
                     FD_CLR(i, &setsave);
                     if (i == fd_num) {
@@ -475,6 +513,7 @@ int main(int argc, char** argv) {
         }
     }
 cleanup:
+    puts("cleanup");
     // send termination message(s) to workers
     ;
     int term = 0;
