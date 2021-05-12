@@ -85,7 +85,7 @@ int main() {
     assert(store);
     int nthreads = 1;
     pthread_t tids[nthreads];
-    struct logFlusherArgs logArgs = { "logs.txt", store, 0 };
+    struct logFlusherArgs logArgs = { "logs.json", store, 0 };
     pthread_t logTid;
 
     for (size_t i = 0; i < nthreads; i++) {
@@ -98,8 +98,8 @@ int main() {
     for (size_t i = 0; i < nthreads; i++) {
         DIE_ON_NZ(pthread_join(tids[i], NULL));
     }
-
-    //DIE_ON_NZ(pthread_join(logTid, NULL));
+    enqueue(store->logBuffer, "EXIT");
+    DIE_ON_NZ(pthread_join(logTid, NULL));
     puts("SUCCESS");
     return EXIT_SUCCESS;
 }

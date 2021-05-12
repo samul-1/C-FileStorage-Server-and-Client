@@ -50,15 +50,30 @@ static FileNode_t* getVictim(CacheStorage_t* store) {
 // todo change to snprintf and refactor
 static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
     char eventBuf[EVENT_SLOT_SIZE];
-    sprintf(eventBuf, "REQ: %d WO: %ld - %s %s ", requestor, pthread_self(), op, pathname);
+    time_t current_time;
+    struct tm* time_info;
+    char timeString[9];  // space for "HH:MM:SS\0"
+
+    time(&current_time);
+    time_info = localtime(&current_time);
+
+    strftime(timeString, sizeof(timeString), "%H:%M:%S", time_info);
+
+    sprintf(
+        eventBuf, "\t{\n\t\t\"timestamp\": \"%s\",\n\t\t\"clientFd\": %d,\n\t\t\"workerTid\": %ld,\n\t\t\"operationType\": \"%s\",\n\t\t\"filePath\": \"%s\",",
+        timeString, requestor, pthread_self(), op, pathname
+    );
     if (!(outcome)) {
-        sprintf(eventBuf + strlen(eventBuf), "- OK (%zu bytes)\n", processedSize);
+        sprintf(
+            eventBuf + strlen(eventBuf), "\n\t\t\"outcome\": \"OK\",\n\t\t\"bytesProcessed\": %zu\n\t},\n",
+            processedSize
+        );
     }
     else if ((outcome > 0)) {
-        sprintf(eventBuf + strlen(eventBuf), " - FAILED errno % d\n", outcome);
+        sprintf(eventBuf + strlen(eventBuf), "\n\t\t\"outcome\": \"failed\",\n\t\t\"errorCode\": %d\n\t},\n", outcome);
     }
     else {
-        sprintf(eventBuf + strlen(eventBuf), " - PUT ON WAIT(code % d)\n", outcome);
+        sprintf(eventBuf + strlen(eventBuf), "\n\t\t\"outcome\": \"client put on wait (code % d)\"\n\t},\n", outcome);
     }
     return enqueue(buffer, eventBuf);
 }

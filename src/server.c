@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <signal.h>
+#include "../include/cacheFns.h"
 #include "../include/boundedbuffer.h"
 #include "../include/fileparser.h"
 #include "../utils/scerrhand.h"
@@ -48,14 +49,18 @@ case EACCES:\
     break;\
 }
 
-#define GET_LONGVAL_OR_EXIT(p, k, v, d)\
+#define GET_LONGVAL_OR_EXIT(p, k, v, d, failcond)\
     if((v = getLongValueFor(p, k, d)) == -1) {\
     perror("Error getting value for " #k);\
     if(p) {\
         destroyParser(p);\
     }\
+    if(v failcond) {\
+        fprintf(stderr, "Invalid value for config parameter " #k "; using default.");\
+        v = d;\
+    }\
     exit(EXIT_FAILURE);\
-}
+    }
 
 #define GET_VAL_OR_EXIT(p, k, b, d)\
     if(getValueFor(p, k, b, d) == -1) {\
@@ -108,7 +113,7 @@ char* getRequestPayloadSegment(int fd) {
 
 }
 
-struct _args {
+struct workerArgs {
     BoundedBuffer* buf;
     CacheStorage_t* store;
     int pipeOut;
@@ -116,6 +121,13 @@ struct _args {
 
 volatile sig_atomic_t softExit = 0;
 volatile sig_atomic_t hardExit = 0;
+
+void softExitHandler(void) {
+    softExit = 1;
+}
+void hardExitHandler(void) {
+    hardExit = 1;
+}
 
 size_t updateClientCount(ssize_t delta) {
     static pthread_mutex_t countMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -137,9 +149,9 @@ void* _startWorker(void* args) {
     Upon being called, enters an infinite loop and
     reads tasks from the queue, processing them one at a time
     */
-    BoundedBuffer* taskBuf = ((struct _args*)args)->buf;
-    CacheStorage_t* store = ((struct _args*)args)->store;
-    int pipeOut = ((struct _args*)args)->pipeOut;
+    BoundedBuffer* taskBuf = ((struct workerArgs*)args)->buf;
+    CacheStorage_t* store = ((struct workerArgs*)args)->store;
+    int pipeOut = ((struct workerArgs*)args)->pipeOut;
 
     while (true) {
         int
@@ -338,17 +350,17 @@ int main(int argc, char** argv) {
         sockname[BUFSIZ],
         logfilename[BUFSIZ];
 
-    // todo check that parameters are valid
-    GET_LONGVAL_OR_EXIT(configParser, "MAXSTORAGECAP", maxStorageCap, DFL_MAXSTORAGECAP);
-    GET_LONGVAL_OR_EXIT(configParser, "MAXFILECOUNT", maxFileCount, DFL_MAXFILECOUNT);
-    GET_LONGVAL_OR_EXIT(configParser, "WORKERPOOLSIZE", workerPoolSize, DFL_POOLSIZE);
-    GET_LONGVAL_OR_EXIT(configParser, "SOCKETBACKLOG", socketBacklog, DFL_SOCKETBACKLOG);
-    GET_LONGVAL_OR_EXIT(configParser, "TASKBUFSIZE", taskBufSize, DFL_TASKBUFSIZE);
-    GET_LONGVAL_OR_EXIT(configParser, "LOGBUFSIZE", logBufSize, DFL_LOGBUFSIZE);
-    GET_LONGVAL_OR_EXIT(configParser, "REPLACEMENTALGO", replacementAlgo, DFL_REPLACEMENTALGO);
+    GET_LONGVAL_OR_EXIT(configParser, "MAXSTORAGECAP", maxStorageCap, DFL_MAXSTORAGECAP, <= 0);
+    GET_LONGVAL_OR_EXIT(configParser, "MAXFILECOUNT", maxFileCount, DFL_MAXFILECOUNT, <= 0);
+    GET_LONGVAL_OR_EXIT(configParser, "WORKERPOOLSIZE", workerPoolSize, DFL_POOLSIZE, <= 0);
+    GET_LONGVAL_OR_EXIT(configParser, "SOCKETBACKLOG", socketBacklog, DFL_SOCKETBACKLOG, <= 0);
+    GET_LONGVAL_OR_EXIT(configParser, "TASKBUFSIZE", taskBufSize, DFL_TASKBUFSIZE, <= 1);
+    GET_LONGVAL_OR_EXIT(configParser, "LOGBUFSIZE", logBufSize, DFL_LOGBUFSIZE, <= 1);
+    GET_LONGVAL_OR_EXIT(configParser, "REPLACEMENTALGO", replacementAlgo, DFL_REPLACEMENTALGO, <= FIFO_ALGO);
     GET_VAL_OR_EXIT(configParser, "SOCKETFILENAME", sockname, DFL_SOCKNAME);
     GET_VAL_OR_EXIT(configParser, "LOGFILENAME", logfilename, DFL_LOGFILENAME);
 
+    // todo register sigaction
 
     BoundedBuffer* taskBuffer; // used by manager thread to pass incoming requests to workers
     CacheStorage_t* store; // in-memory file storage system
@@ -379,7 +391,7 @@ int main(int argc, char** argv) {
     DIE_ON_NEG_ONE(bind(fd_socket, (struct sockaddr*)&saddr, sizeof saddr));
     DIE_ON_NEG_ONE(listen(fd_socket, MAX_CONN));
 
-    //puts("listening");
+    puts("listening");
 
     fd_num = MAX(fd_socket, fd_num);
 
@@ -388,7 +400,7 @@ int main(int argc, char** argv) {
     FD_SET(fd_socket, &setsave);
     FD_SET(w2mPipe[0], &setsave);
 
-    struct _args* threadArgs = malloc(sizeof(*threadArgs));
+    struct workerArgs* threadArgs = malloc(sizeof(*threadArgs));
     threadArgs->buf = taskBuffer;
     threadArgs->store = store;
     threadArgs->pipeOut = w2mPipe[1];
@@ -402,11 +414,19 @@ int main(int argc, char** argv) {
 
     // todo run the log flusher
 
-    while (true) {
+    while (!hardExit) {
         rset = setsave; // re-initialize the read set
 
         // wait for a fd to be ready for read operation
-        DIE_ON_NEG_ONE(select(fd_num + 1, &rset, NULL, NULL, NULL));
+        if ((select(fd_num + 1, &rset, NULL, NULL, NULL)) == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+            else {
+                perror("select");
+                return EXIT_FAILURE;
+            }
+        }
 
         // loop through the file descriptors
         for (size_t i = 0; i < fd_num + 1; i++) {
@@ -449,17 +469,17 @@ int main(int argc, char** argv) {
                         fd_num--;
                     }
                     // push ready file descriptor to task queue for workers
-                    // todo check for errors
-                    enqueue(taskBuffer, fd);
+                    DIE_ON_NEG_ONE(enqueue(taskBuffer, fd));
                 }
             }
         }
     }
 cleanup:
     // send termination message(s) to workers
+    ;
     int term = 0;
     for (size_t i = 0; i < workerPoolSize; i++) {
-        enqueue(taskBuffer, (void*)&term);
+        DIE_ON_NEG_ONE(enqueue(taskBuffer, (void*)&term));
     }
 
     // todo send termination message to log flusher thread
@@ -469,8 +489,8 @@ cleanup:
         DIE_ON_NEG_ONE(pthread_join(workers[i], NULL));
     }
 
+    unlink(sockname);
     // todo wait for the log flusher
-
     // release resources on the heap
     destroyBoundedBuffer(taskBuffer);
     // todo make destroyStorage in filesystemApi.c
