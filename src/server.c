@@ -35,7 +35,7 @@
 #define DFL_POOLSIZE 10
 #define DFL_MAXSTORAGECAP 10000
 #define DFL_MAXFILECOUNT 100
-#define DFL_SOCKNAME "tmp/serversocket.sk"
+#define DFL_SOCKNAME "serversocket.sk"
 #define DFL_LOGFILENAME "logs.txt"
 #define DFL_SOCKETBACKLOG 10
 #define DFL_TASKBUFSIZE 2048
@@ -80,8 +80,9 @@ case EACCES:\
 #define NOTIFY_PENDING_CLIENTS(notifyList, notifyCode, pipeBuf, pipeOut)\
 while (notifyList) {\
     SEND_RESPONSE_CODE(notifyList->fd, notifyCode);\
-    snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);\
-    DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));\
+    snprintf(pipeBuf, PIPE_BUF_LEN, "%04d", notifyList->fd);\
+    printf("notifying %s\n", pipeBuf);\
+    DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, PIPE_BUF_LEN));\
     struct fdNode* tmpPtr = notifyList;\
     notifyList = notifyList->nextPtr;\
     free(tmpPtr);\
@@ -113,7 +114,6 @@ char* getRequestPayloadSegment(int fd) {
     DIE_ON_NEG_ONE(read(fd, recvBuf, filenameLen));
 
     return recvBuf;
-
 }
 
 struct workerArgs {
@@ -125,8 +125,13 @@ struct workerArgs {
 volatile sig_atomic_t softExit = 0;
 volatile sig_atomic_t hardExit = 0;
 
+void unlinkSock() {
+    // !!! remove this
+    unlink(DFL_SOCKNAME);
+}
 
-void hardExitHandler(int sig) {
+void exitSigHandler(int sig) {
+    // ! if sig == SIGINT || sig == SIGTSTP then hardexit = 1, if sig == SIGINT then softexit = 1
     if (sig == SIGINT || sig == SIGHUP) {
         softExit = 1;
     }
@@ -276,9 +281,9 @@ void* _startWorker(void* args) {
                     if (newLock) { // a client that was waiting on this file finally acquired the lock on it
                         SEND_RESPONSE_CODE(newLock, OK);
                         // convert int to string
-                        snprintf(pipeBuf, PIPE_BUF_LEN, "%d", notifyList->fd);
+                        snprintf(pipeBuf, PIPE_BUF_LEN, "%04d", newLock);
                         // tell manager we're done handling the request of that client
-                        DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+                        DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, PIPE_BUF_LEN));
                     }
                 }
                 puts("unlock");
@@ -311,10 +316,11 @@ void* _startWorker(void* args) {
             }
 
             if (putFdBack) { // we're done handling this request - put client fd back in readset
+                printf("putting back %d\n", rdy_fd);
                 // convert int to string
-                snprintf(pipeBuf, PIPE_BUF_LEN, "%d", rdy_fd);
+                snprintf(pipeBuf, PIPE_BUF_LEN, "%04d", rdy_fd);
                 // tell manager we're done handling the request
-                DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, strlen(pipeBuf)));
+                DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, PIPE_BUF_LEN));
             }
         }
         else {
@@ -325,8 +331,8 @@ void* _startWorker(void* args) {
             // notify them that the operation has been completed successfully (they acquired the lock)
             NOTIFY_PENDING_CLIENTS(notifyList, OK, pipeBuf, pipeOut);
 
-            ssize_t cnt = updateClientCount(-1);
-            DIE_ON_NEG_ONE(write(pipeOut, "0", strlen("0"))); // when the manager reads "0", he'll know a client left
+            updateClientCount(-1);
+            DIE_ON_NEG_ONE(write(pipeOut, "0000", PIPE_BUF_LEN)); // when the manager reads "0", he'll know a client left
         }
     }
     pthread_exit(NULL);
@@ -374,7 +380,7 @@ int main(int argc, char** argv) {
     //!
     struct sigaction sig_handler;
     memset(&sig_handler, 0, sizeof(sig_handler));
-    sig_handler.sa_handler = hardExitHandler;
+    sig_handler.sa_handler = exitSigHandler;
     sigset_t handlerMask;
     sigemptyset(&handlerMask);
     sigaddset(&handlerMask, SIGINT);
@@ -385,6 +391,7 @@ int main(int argc, char** argv) {
     DIE_ON_NEG_ONE(sigaction(SIGINT, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGHUP, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGTSTP, &sig_handler, NULL));
+    atexit(unlinkSock);
 
 
     BoundedBuffer* taskBuffer; // used by manager thread to pass incoming requests to workers
@@ -458,7 +465,7 @@ int main(int argc, char** argv) {
             }
             else {
                 perror("select");
-                return EXIT_FAILURE;
+                //return EXIT_FAILURE;
             }
         }
         puts("selected");
@@ -467,8 +474,10 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < fd_num + 1; i++) {
             if (FD_ISSET(i, &rset)) { // file descriptor is ready
                 if (i == w2mPipe[0]) { // worker is done with a request
+                    puts("MESSAGE FROM PIPE");
                     // add file descriptor back into readset
                     DIE_ON_NEG_ONE(read(i, pipebuf, PIPE_BUF_LEN));
+                    printf("I JUST READ %s\n", pipebuf);
 
                     //! remove after debug
                     if (atol(pipebuf) == 0) {

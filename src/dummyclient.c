@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
         memset(writeBuf, 0, MAX_MSG_LEN);
         //scanf("%s", writeBuf); // type next message
         char sendBuf[MAX_MSG_LEN * 2] = "";
-        char flagbuf[2] = "";
+        //char flagbuf[2] = "";
 
         fgets(writeBuf, MAX_MSG_LEN, stdin);
         if (!strncmp(writeBuf, "exit", 4)) { // close on "exit" message

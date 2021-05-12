@@ -79,6 +79,28 @@ static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname,
 }
 
 // ! --------------------------------------------------------------------------
+static void concatenateFdLists(struct fdNode** dest, struct fdNode* src) {
+    /**
+     * @brief Makes the last element of list `dest` point to the head of list `src`
+     *
+     * @note Assumes: (1) input is valid (treats bad input as a fatal error), \n
+     * (2) the caller has mutual exclusion over the file to which the list belongs, \n
+     *
+     * @param dest The list to which `src` will be concatenated
+     * @param stc The list that will be added at the tail of `dest`
+     *
+     */
+    if (*dest == NULL) {
+        *dest = src;
+        return;
+    }
+
+    while ((*dest)->nextPtr) {
+        dest = &((*dest)->nextPtr);
+    }
+    (*dest)->nextPtr = src;
+}
+
 static int pushFdToList(struct fdNode** listPtr, int fd) {
     /**
      * @brief Puts a fd at the end of the given list.
@@ -635,7 +657,10 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     while (store->currStorageSize + newContentLen > store->maxStorageSize) {
         FileNode_t* victim = getVictim(store);
         assert(victim);
-        destroyFile(store, victim, notifyList); // todo merge list with following list
+        struct fdNode* tmpList = NULL; // will hold a list of fd's that were waiting on this file before it got deleted
+        destroyFile(store, victim, &tmpList);
+        // make a single list with all the clients that need to be notified that a file they were blocked on doesn't exist (anymore)
+        concatenateFdLists(notifyList, tmpList);
         // todo send file content somehow and log eviction of file
     }
 
@@ -781,7 +806,9 @@ int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const i
             currPtr->lockedBy = newLock;
         }
 
-        // todo remove client fd from pending list(s)
+        // todo test
+        // if client was blocked on a file waiting to lock it, remove it from the waiting list
+        popNodeFromFdQueue(&(currPtr->pendingLocks_hPtr), requestor);
 
         DIE_ON_NZ(pthread_mutex_unlock(&(currPtr->ordering)));
         DIE_ON_NZ(pthread_mutex_unlock(&(currPtr->mutex)));
