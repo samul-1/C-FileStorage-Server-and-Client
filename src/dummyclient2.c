@@ -70,6 +70,8 @@ int main(int argc, char** argv) {
 
 
     while (1) {
+        size_t sz;
+        char* bf;
         memset(writeBuf, 0, MAX_MSG_LEN);
         //scanf("%s", writeBuf); // type next message
        // char sendBuf[MAX_MSG_LEN * 2] = "";
@@ -82,7 +84,9 @@ int main(int argc, char** argv) {
         else if (!strncmp(writeBuf, "open", 4)) {
             fgets(writeBuf, MAX_MSG_LEN, stdin);
             writeBuf[strlen(writeBuf) - 1] = '\0';
-            openFile(writeBuf, O_CREATE);
+            int flag;
+            scanf("%d", &flag);
+            openFile(writeBuf, flag);
         }
         else if (!strncmp(writeBuf, "append", 6)) {
             char write2buf[MAX_MSG_LEN];
@@ -94,7 +98,14 @@ int main(int argc, char** argv) {
             fgets(write2buf, MAX_MSG_LEN, stdin);
             write2buf[strlen(write2buf) - 1] = '\0';
 
-            appendToFile(writeBuf, write2buf, strlen(write2buf) - 1, NULL);
+            appendToFile(writeBuf, write2buf, strlen(write2buf), NULL);
+        }
+        else if (!strncmp(writeBuf, "write", 5)) {
+            // name
+            fgets(writeBuf, MAX_MSG_LEN, stdin);
+            writeBuf[strlen(writeBuf) - 1] = '\0';
+
+            writeFile(writeBuf, NULL);
         }
         else if (!strncmp(writeBuf, "lock", 4)) {
             // name
@@ -118,15 +129,14 @@ int main(int argc, char** argv) {
             closeFile(writeBuf);
         }
         else if (!strncmp(writeBuf, "read", 4)) {
-            size_t sz;
-            char* bf;
             // name
             fgets(writeBuf, MAX_MSG_LEN, stdin);
             writeBuf[strlen(writeBuf) - 1] = '\0';
 
-            readFile(writeBuf, (void**)&bf, &sz);
-            printf("Size: %zu, Read: %s\n", sz, bf);
-            free(bf);
+            if (readFile(writeBuf, (void**)&bf, &sz) == 0) {
+                printf("Size: %zu, Read: %s\n", sz, bf);
+                free(bf);
+            }
         }
         else if (!strncmp(writeBuf, "remove", 6)) {
             // name

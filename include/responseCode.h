@@ -7,5 +7,6 @@
 #define FILE_TOO_BIG 4
 #define INTERNAL_SERVER_ERROR 5
 #define BAD_REQUEST 6
+#define ALREADY_EXISTS 7
 
 #endif

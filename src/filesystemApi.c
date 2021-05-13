@@ -57,7 +57,8 @@ static FileNode_t* getVictim(CacheStorage_t* store, FileNode_t* spare) {
 
 }
 
-// todo change to snprintf and refactor
+// !!
+// todo remove `static` and add logging for `openFile`, `closeFile`, `removeFile`, `getVictim`, and in server.c for open connection and close connection
 static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
     char eventBuf[EVENT_SLOT_SIZE];
     time_t current_time;
@@ -484,10 +485,10 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
     }
     assert(notifyList);
 
-    //int ret;
-    const bool create = IS_SET(O_CREATE, flags); // IS_O_CREATE_SET(mode);
-    const bool lock = IS_SET(O_LOCK, flags); //  IS_O_LOCK_SET(mode);
-    // printf("O_CREATE %d O_LOCK %d\n", create, lock);
+    int errnosave = 0;
+
+    const bool create = IS_SET(O_CREATE, flags);
+    const bool lock = IS_SET(O_LOCK, flags);
 
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
 
@@ -497,7 +498,7 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
     errno = 0; // we don't care about the error code of findFile here as we are managing both EINVAL and ENOENT directly
     if (alreadyExists == create) {
         DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
-        errno = EPERM;
+        errno = alreadyExists ? EPERM : ENOENT;
         return -1;
     }
 
@@ -518,18 +519,34 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
             fPtr->canDoFirstWrite = requestor;
         }
 
+        DIE_ON_NEG_ONE(pushFdToList(&(fPtr->openDescriptors), requestor));
+
         // nothing else will set `errno` from here on if everything is successful, so we can
         // omit error checking here as the return statement will check for errors
         addFileToStore(store, fPtr);
     }
     else {
+        DIE_ON_NZ(pthread_mutex_lock(&(fPtr->ordering)));
+        DIE_ON_NZ(pthread_mutex_lock(&(fPtr->mutex)));
+        if (lock) {
+            if (!fPtr->lockedBy) {
+                fPtr->lockedBy = requestor;
+            }
+            else { // file is already locked: it can't be opened with a lock
+                errnosave = EACCES;
+            }
+        }
+        if (!errnosave) {
+            DIE_ON_NEG_ONE(pushFdToList(&(fPtr->openDescriptors), requestor));
+        }
+        DIE_ON_NZ(pthread_mutex_unlock(&(fPtr->ordering)));
+        DIE_ON_NZ(pthread_mutex_unlock(&(fPtr->mutex)));
 
     }
     // add requestor to the list of clients that opened this file
-    DIE_ON_NEG_ONE(pushFdToList(&(fPtr->openDescriptors), requestor));
 
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
-
+    errno = errnosave;
     return errno ? -1 : 0;
 }
 int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, size_t* size, const int requestor) {
@@ -681,7 +698,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     // actual write operation
     size_t newContentLen = strlen(newContent);
 
-    if (newContentLen > store->maxStorageSize) {
+    if (fptr->contentSize + newContentLen > store->maxStorageSize) {
         // file cannot be stored because it is too large
         errnosave = E2BIG;
         logEvent(store->logBuffer, "WRITE", pathname, errnosave, requestor, 0);

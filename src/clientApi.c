@@ -18,6 +18,7 @@ const char* errMessages[] = {
     "File is too big to be stored.",
     "An error on the server-side occurred.",
     "Invalid request code or payload.",
+    "File already exists.",
 };
 
 const int errnoMap[] = {
@@ -26,13 +27,13 @@ const int errnoMap[] = {
 
 #define INITIAL_REQ_SIZ 1024
 
-#define PRINT_IF_ENABLED(fd, msg) \
+#define PRINT_IF_ENABLED(fd, op, filepath, msg) \
 if(PRINTS_ENABLED) {\
-    fprintf(fd, "%s\n", msg);\
+    fprintf(fd, "%s '%s': %s\n", #op, filepath, msg);\
 }
 
-#define PRINT_ERR_IF_ENABLED(errCode) \
-PRINT_IF_ENABLED(stderr, errMessages[errCode-1]);
+#define PRINT_ERR_IF_ENABLED(op, filepath, errCode) \
+PRINT_IF_ENABLED(stderr, op, filepath, errMessages[errCode-1]);
 
 #define ERR_CODE_TO_ERRNO(errCode) (errno = errnoMap[errCode-1])
 
@@ -94,15 +95,15 @@ int openFile(const char* pathname, int flags) {
     long responseCode;
 
     if (isNumber(recvLine, &responseCode) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Open, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
     if (responseCode == 0) {
-        PRINT_IF_ENABLED(stdout, "OK\n");
+        PRINT_IF_ENABLED(stdout, Open, pathname, "OK\n");
     }
     else {
-        PRINT_ERR_IF_ENABLED(responseCode);
+        PRINT_ERR_IF_ENABLED(Open, pathname, responseCode);
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
@@ -138,14 +139,14 @@ int readFile(const char* pathname, void** buf, size_t* size) {
         return -1;
     }
     long responseCode;
-
+    printf("response from server %s\n", recvLine1);
     if (isNumber(recvLine1, &responseCode) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Read, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
     else if (responseCode != OK) { // there's nothing else to read in the response
-        PRINT_ERR_IF_ENABLED(responseCode);
+        PRINT_ERR_IF_ENABLED(Read, pathname, responseCode);
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
@@ -156,7 +157,7 @@ int readFile(const char* pathname, void** buf, size_t* size) {
     }
     long responseSize;
     if (isNumber(recvLine2, &responseSize) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Read, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
@@ -178,9 +179,9 @@ int readFile(const char* pathname, void** buf, size_t* size) {
 
 int writeFile(const char* pathname, const char* dirname) {
     size_t pathnameLen = strlen(pathname);
-
     FILE* fp = fopen(pathname, "r");
     if (!fp) {
+        perror("fopen");
         return -1;
     }
 
@@ -212,7 +213,6 @@ int writeFile(const char* pathname, const char* dirname) {
     // todo change this to handle binary data
     // construct request message
     snprintf(req, reqLen + 1, "%d%08ld%s%08ld%s", WRITE_FILE, pathnameLen, pathname, filecontentLen, filecontentBuf);
-
     if (write(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
@@ -227,15 +227,15 @@ int writeFile(const char* pathname, const char* dirname) {
     long responseCode;
 
     if (isNumber(recvLine, &responseCode) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Write, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
     if (responseCode == 0) {
-        PRINT_IF_ENABLED(stdout, "OK");
+        PRINT_IF_ENABLED(stdout, Write, pathname, "OK");
     }
     else {
-        PRINT_ERR_IF_ENABLED(responseCode);
+        PRINT_ERR_IF_ENABLED(Write, pathname, responseCode);
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
@@ -246,7 +246,7 @@ int writeFile(const char* pathname, const char* dirname) {
 
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname) {
     size_t pathnameLen = strlen(pathname);
-    size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + size;
+    size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + size + 1;
     char* req = calloc(reqLen, 1);
     if (!req) {
         return -1;
@@ -267,15 +267,15 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     long responseCode;
 
     if (isNumber(recvLine, &responseCode) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Append, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
     if (responseCode == 0) {
-        PRINT_IF_ENABLED(stdout, "OK");
+        PRINT_IF_ENABLED(stdout, Append, pathname, "OK");
     }
     else {
-        PRINT_ERR_IF_ENABLED(responseCode);
+        PRINT_ERR_IF_ENABLED(Append, pathname, responseCode);
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
@@ -312,15 +312,15 @@ int lockFile(const char* pathname) {
     long responseCode;
 
     if (isNumber(recvLine, &responseCode) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Lock, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
     if (responseCode == 0) {
-        PRINT_IF_ENABLED(stdout, "OK");
+        PRINT_IF_ENABLED(stdout, Lock, pathname, "OK");
     }
     else {
-        PRINT_ERR_IF_ENABLED(responseCode);
+        PRINT_ERR_IF_ENABLED(Lock, pathname, responseCode);
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
@@ -355,15 +355,15 @@ int unlockFile(const char* pathname) {
     long responseCode;
 
     if (isNumber(recvLine, &responseCode) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Unlock, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
     if (responseCode == 0) {
-        PRINT_IF_ENABLED(stdout, "OK");
+        PRINT_IF_ENABLED(stdout, Unlock, pathname, "OK");
     }
     else {
-        PRINT_ERR_IF_ENABLED(responseCode);
+        PRINT_ERR_IF_ENABLED(Unlock, pathname, responseCode);
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
@@ -398,15 +398,15 @@ int closeFile(const char* pathname) {
     long responseCode;
 
     if (isNumber(recvLine, &responseCode) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Close, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
     if (responseCode == 0) {
-        PRINT_IF_ENABLED(stdout, "OK");
+        PRINT_IF_ENABLED(stdout, Close, pathname, "OK");
     }
     else {
-        PRINT_ERR_IF_ENABLED(responseCode);
+        PRINT_ERR_IF_ENABLED(Close, pathname, responseCode);
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
@@ -441,15 +441,15 @@ int removeFile(const char* pathname) {
     long responseCode;
 
     if (isNumber(recvLine, &responseCode) != 0) {
-        PRINT_IF_ENABLED(stderr, "Invalid response from server.\n");
+        PRINT_IF_ENABLED(stderr, Remove, pathname, "Invalid response from server.\n");
         errno = EINVAL;
         return -1;
     }
     if (responseCode == 0) {
-        PRINT_IF_ENABLED(stdout, "OK");
+        PRINT_IF_ENABLED(stdout, Remove, pathname, "OK");
     }
     else {
-        PRINT_ERR_IF_ENABLED(responseCode);
+        PRINT_ERR_IF_ENABLED(Remove, pathname, responseCode);
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }

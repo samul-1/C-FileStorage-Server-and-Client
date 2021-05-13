@@ -40,13 +40,15 @@
 #define DFL_REPLACEMENTALGO 0
 
 #define STAT_MSG \
-"Max number of files reached: %zu\n\
-Max total storage size reached: %zu\n\
-Number of files that have been evicted by the cache: %zu\n\
-Number of files in the storage at the time of exit: %zu\n"
+ANSI_COLOR_BG_GREEN "       " ANSI_COLOR_RESET " Statistics: " ANSI_COLOR_BG_GREEN "       " ANSI_COLOR_RESET "\n"\
+ANSI_COLOR_CYAN "Max number of files reached: " ANSI_COLOR_RESET "%zu\n" \
+ANSI_COLOR_CYAN "Max total storage size reached: " ANSI_COLOR_RESET "%zu\n" \
+ANSI_COLOR_CYAN "Number of files that have been evicted from the cache: " ANSI_COLOR_RESET "%zu\n" \
+ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLOR_RESET "%zu\n"
 
 #define SEND_RESPONSE_CODE(fd, code) \
-snprintf(codeBuf, RES_CODE_LEN+1, "%d", code);\
+printf("SENDING CODE %d\n", code);\
+snprintf(codeBuf, RES_CODE_LEN + 1, "%d", code);\
 DIE_ON_NEG_ONE(write(fd, codeBuf, RES_CODE_LEN));
 
 #define HANDLE_REQ_ERROR(fd) \
@@ -56,6 +58,15 @@ case ENOENT:\
     break;\
 case EACCES:\
     SEND_RESPONSE_CODE(fd, FORBIDDEN);\
+    break;\
+case EPERM:\
+    SEND_RESPONSE_CODE(fd, ALREADY_EXISTS);\
+    break;\
+case E2BIG:\
+    SEND_RESPONSE_CODE(fd, FILE_TOO_BIG);\
+    break;\
+case EINVAL:\
+    SEND_RESPONSE_CODE(fd, BAD_REQUEST);\
     break;\
 }
 
@@ -195,13 +206,6 @@ void* _startWorker(void* args) {
             break; // termination message
         }
 
-        // char tmpbuf[2];
-        // while (1) {
-        //     read(rdy_fd, tmpbuf, 1);
-        //     printf("%s", tmpbuf);
-        //     fflush(NULL);
-        //     goto putback;
-        // }
         // read request code
         DIE_ON_NEG_ONE((numRead = read(rdy_fd, requestCodeBuf, REQ_CODE_LEN)));
         printf("%s ", requestCodeBuf);
@@ -223,11 +227,15 @@ void* _startWorker(void* args) {
                 }
                 else {
                     // todo check errors
-                    openFileHandler(store, recvLine1, flags, &notifyList, rdy_fd);
-                    SEND_RESPONSE_CODE(rdy_fd, OK);
-                    // if there were clients waiting to acquire lock on the deleted file(s) notify them
-                    //that the file(s) don't exist (anymore)
-                    NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
+                    if (openFileHandler(store, recvLine1, flags, &notifyList, rdy_fd) == -1) {
+                        HANDLE_REQ_ERROR(rdy_fd);
+                    }
+                    else {
+                        SEND_RESPONSE_CODE(rdy_fd, OK);
+                        // if there were clients waiting to acquire lock on the deleted file(s) notify them
+                        //that the file(s) don't exist (anymore)
+                        NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
+                    }
                 }
                 break;
             case CLOSE_FILE:
@@ -255,7 +263,7 @@ void* _startWorker(void* args) {
                     snprintf(sendLine, METADATA_SIZE + 1, "%08ld", readSize);
                     // we're not putting the "+ 1" after `METADATA_SIZE` because we want to overwrite the '\0' by `snprintf`
                     memcpy(sendLine + METADATA_SIZE, outBuf, readSize);
-                    DIE_ON_NEG_ONE(write(rdy_fd, sendLine, METADATA_SIZE + readSize + 1));
+                    DIE_ON_NEG_ONE(write(rdy_fd, sendLine, METADATA_SIZE + readSize));
 
                     free(sendLine);
                     free(outBuf);
@@ -266,6 +274,9 @@ void* _startWorker(void* args) {
                 // check that the last operation was `openFile` with `O_LOCK|O_CREATE`
                 if (!testFirstWrite(store, recvLine1, rdy_fd)) {
                     SEND_RESPONSE_CODE(rdy_fd, FORBIDDEN);
+                    // throw away the rest of the request payload
+                    recvLine2 = getRequestPayloadSegment(rdy_fd);
+                    free(recvLine2);
                     break;
                 }
                 // the logic of the `writeFile` operation is the same as that of `appendToFile` minus the initial check
@@ -282,6 +293,7 @@ void* _startWorker(void* args) {
                     // notify them that the file(s) don't exist (anymore)
                     NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
                 }
+                free(recvLine2);
                 break;
             case LOCK_FILE:
                 puts("lock");
@@ -327,21 +339,17 @@ void* _startWorker(void* args) {
                 }
                 break;
             default:
-                puts("unknown");
+                puts("\nUNKNOWN");
                 printf("\n\n---\n- %ld\n- %s\n\n-----\n", requestCode, codeBuf);
                 SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
             }
             // puts("Store:");
             // printStore(store);
             // puts("Affected file:");
-            // printFile(store, recvLine1);
+            printFile(store, recvLine1);
 
             // free the resources allocated to handle the request
             free(recvLine1);
-            if (requestCode == WRITE_FILE || requestCode == APPEND_TO_FILE) {
-                free(recvLine2);
-            }
-        putback:
             if (putFdBack) { // we're done handling this request - tell manager to put fd back in readset
                 //printf("putting back %d\n", rdy_fd);
                 // convert int to string
@@ -553,6 +561,7 @@ int main(int argc, char** argv) {
 cleanup:
     puts("cleanup");
     ;
+    // todo ! ask teachers if you need to explicitly call `close` on all the fd's
     // send termination message(s) to workers
     int term = 0;
     for (size_t i = 0; i < workerPoolSize; i++) {
