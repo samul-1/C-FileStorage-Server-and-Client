@@ -207,7 +207,7 @@ void freeFdList(struct fdNode* h) {
 // ! ---------------------------------------------------------------------------
 
 
-static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** notifyList) {
+static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** notifyList) {
     /**
      * @brief Handles eviction of a file from the storage.
      * @note Assumes the caller thread has mutual exclusion over the store. Returns memory allocated on the heap that \n
@@ -221,17 +221,17 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
      */
 
     assert(fptr);
-    // !!!! can we do this without acquiring ordering?
-    DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));
-    DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex))); // ? this was unlock fptr->mutex: typo?
+    assert(store);
 
-    //! permission checking needs to be done somewhere else
-    while (fptr->activeReaders > 0) {
+    DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));
+    DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
+
+    while (fptr->activeReaders > 0 || fptr->isBeingWritten) {
         DIE_ON_NZ(pthread_cond_wait(&(fptr->rwCond), &(fptr->mutex)));
     }
 
-    // remove file from the storage list: it's now out of scope and the only way to
-    // access it is to have a pointer to it
+    // remove file from the storage list: it's now out of scope and the only
+    // way to access it is by having a pointer to it
     if (fptr->prevPtr) {
         fptr->prevPtr->nextPtr = fptr->nextPtr;
     }
@@ -243,7 +243,7 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
         fptr->nextPtr->prevPtr = fptr->prevPtr;
     }
     else {
-        store->tPtr = fptr->prevPtr; // ! monitor this just in case
+        store->tPtr = fptr->prevPtr;
     }
 
     // give back to caller the list of clients that were waiting to gain lock of this file;
@@ -252,15 +252,14 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
         *notifyList = fptr->pendingLocks_hPtr;
     }
 
-
     // there are no more pending requests on the file: file is now safe to delete
     store->currFileNum -= 1;
     store->currStorageSize -= fptr->contentSize;
 
     DIE_ON_NZ(pthread_cond_destroy(&(fptr->rwCond)));
 
-    //DIE_ON_NZ(pthread_mutex_destroy(&(fptr->mutex)));
-    //DIE_ON_NZ(pthread_mutex_destroy(&(fptr->ordering)));
+    DIE_ON_NZ(pthread_mutex_destroy(&(fptr->mutex)));
+    DIE_ON_NZ(pthread_mutex_destroy(&(fptr->ordering)));
 
     // delete from dictionary
     assert(icl_hash_delete(store->dictStore, fptr->pathname, NULL, NULL) == 0); // must succeed
@@ -269,7 +268,6 @@ static int destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** 
     free(fptr->content);
 
     free(fptr);
-    return 0; // ? errors?
 }
 
 
@@ -309,7 +307,7 @@ FileNode_t* allocFile(const char* pathname) {
     }
 
     newFile->pathname = malloc(INITIALBUFSIZ);
-    newFile->content = calloc(INITIALBUFSIZ, 1); //? why calloc
+    newFile->content = calloc(INITIALBUFSIZ, 1);
     newFile->insertionTime = time(0);
 
     if (!newFile->pathname || !newFile->content) {
@@ -344,16 +342,6 @@ static FileNode_t* findFile(const CacheStorage_t* store, const char* pathname) {
         return NULL;
     }
 
-    // FileNode_t* currPtr = store->hPtr;
-
-    // while (currPtr && strcmp(currPtr->pathname, pathname)) { //? strncmp?
-    //     currPtr = currPtr->nextPtr;
-    // // }
-    // if (!currPtr) {
-    //     errno = ENOENT;
-    // }
-
-    //return currPtr;
 
     void* ret = icl_hash_find(store->dictStore, (void*)pathname);
     if (!ret) {
@@ -402,20 +390,18 @@ void addFileToStore(CacheStorage_t* store, FileNode_t* filePtr) {
      // add file to list structure
     if (!store->hPtr) {
         store->hPtr = filePtr;
-        //store->tPtr = filePtr; //?
 
     }
     else {
         filePtr->prevPtr = store->tPtr;
-        if (store->tPtr) //?
+        if (store->tPtr) {
             store->tPtr->nextPtr = filePtr;
+        }
     }
     store->tPtr = filePtr;
 
     // add file to dict structure
     icl_hash_insert(store->dictStore, filePtr->pathname, filePtr); // todo manage error
-
-    // ? all good? mutex?
 
     store->currFileNum += 1;
     store->currStorageSize += filePtr->contentSize;
@@ -482,9 +468,8 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
         // acquiring mutual exclusion because no other thread has access to it yet
         if (lock) {
             fPtr->lockedBy = requestor;
+            fPtr->canDoFirstWrite = requestor;
         }
-
-        // ! remove fPtr->open = true;
 
         // nothing else will set `errno` from here on if everything is successful, so we can
         // omit error checking here as the return statement will check for errors
@@ -569,6 +554,8 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
 
     fptr->activeReaders -= 1;
 
+    fptr->canDoFirstWrite = 0; // last operation on this file isn't `openFile` with `O_LOCK|O_CREATE` anymore because a successful operation was done on it
+
     if (!fptr->activeReaders) {
         DIE_ON_NZ(pthread_cond_signal(&(fptr->rwCond)));
     }
@@ -645,7 +632,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     // actual write operation
-    size_t newContentLen = strlen(newContent); // ? what if it's not null-terminated?
+    size_t newContentLen = strlen(newContent);
 
     if (newContentLen > store->maxStorageSize) {
         // file cannot be stored because it is too large
@@ -661,14 +648,14 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         destroyFile(store, victim, &tmpList);
         // make a single list with all the clients that need to be notified that a file they were blocked on doesn't exist (anymore)
         concatenateFdLists(notifyList, tmpList);
-        // todo send file content somehow and log eviction of file
+        // todo send victim back somehow and log eviction of file
     }
 
     store->currStorageSize += newContentLen;
-
     store->maxReachedStorageSize = MAX(store->maxReachedStorageSize, store->currStorageSize);
+
     size_t oldLen = strlen(fptr->content);
-    void* tmp = realloc(fptr->content, fptr->contentSize + newContentLen + 1); //? void* or char*?
+    void* tmp = realloc(fptr->content, fptr->contentSize + newContentLen + 1);
     if (tmp) {
         fptr->content = tmp;
         fptr->content[oldLen] = '\0';
@@ -681,12 +668,13 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     }
     // end actual write operation
     logEvent(store->logBuffer, "WRITE", pathname, errnosave, requestor, (errnosave ? 0 : newContentLen));
+    fptr->canDoFirstWrite = 0; // last operation on this file isn't `openFile` with `O_LOCK|O_CREATE` anymore because a successful operation was done on it
 
 cleanup:
     // second critical section: we're done writing, we can wake up any pending readers and also release the lock over the store
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
     fptr->isBeingWritten = false;
-    DIE_ON_NZ(pthread_cond_broadcast(&(fptr->rwCond))); // ? this can probably be eliminated, along with the whole isBeingWritten
+    DIE_ON_NZ(pthread_cond_broadcast(&(fptr->rwCond)));
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
 
@@ -757,6 +745,7 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
     // second critical section: we're done writing, we can wake up any pending readers and also release the lock over the store
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
     fptr->isBeingWritten = false;
+    fptr->canDoFirstWrite = 0; // last operation on this file isn't `openFile` with `O_LOCK|O_CREATE` anymore because a successful operation was done on it
     DIE_ON_NZ(pthread_cond_broadcast(&(fptr->rwCond))); // wake up pending readers or writers
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
@@ -798,7 +787,7 @@ int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const i
         if (currPtr->lockedBy == requestor) {
             // will be 0 if no clients are waiting to lock this file; otherwise it'll be the fd of the
             // first client that is stuck waiting to lock
-            int newLock = popNodeFromFdQueue(&(currPtr->pendingLocks_hPtr), -1); // ? what happens if next in line leaves too?
+            int newLock = popNodeFromFdQueue(&(currPtr->pendingLocks_hPtr), -1);
 
             // communicate new lock's fd back to caller
             pushFdToList(notifyList, newLock);
@@ -849,9 +838,8 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
         errno = errnosave;
         return -1;
     }
-    // !!!!!!! investigate this !!!!!!!!!!!!!!!!!!!!!!!!!!! STARVATION POSSIBLE HERE
-    // !! I would say just use the same protocol as lockFile with `ordering` and `isBeingWritten`
-    // !! DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));
+
+    DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
 
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
@@ -870,7 +858,7 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
         *newLockFd = newLock; //? write log event LOCK for new lock
 
         fptr->lockedBy = newLock;
-
+        fptr->canDoFirstWrite = 0; // last operation on this file isn't `openFile` with `O_LOCK|O_CREATE` anymore because a successful operation was done on it
     }
     else {
         errnosave = EACCES;
@@ -878,6 +866,7 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
     logEvent(store->logBuffer, "UNLOCK", pathname, errnosave, requestor, 0);
 
     DIE_ON_NZ(pthread_cond_broadcast(&(fptr->rwCond))); // wake up pending readers or writers
+    DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     errno = errnosave;
@@ -932,6 +921,7 @@ int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requ
     // second critical section: we're done writing, we can wake up any pending readers and also release the lock over the store
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
     fptr->isBeingWritten = false;
+    fptr->canDoFirstWrite = 0; // last operation on this file isn't `openFile` with `O_LOCK|O_CREATE` anymore because a successful operation was done on it
     DIE_ON_NZ(pthread_cond_broadcast(&(fptr->rwCond))); // wake up pending readers or writers
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
@@ -939,6 +929,7 @@ int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requ
 
     return 0;
 }
+
 int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode** notifyList, const int requestor) {
     /**
      * @brief Removes a file from the storage
@@ -973,4 +964,33 @@ int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode
 
     return 0;
 
+}
+
+bool testFirstWrite(CacheStorage_t* store, const char* pathname, const int requestor) {
+    if (!store || !strlen(pathname) || requestor <= 0) {
+        errno = EINVAL;
+        return false;
+    }
+    bool ret;
+
+    DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
+
+    FileNode_t* fptr = findFile(store, pathname);
+
+    if (!fptr) {
+        DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
+        return -1;
+    }
+
+    DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));
+    DIE_ON_NZ(pthread_mutex_lock(&(fptr->mutex)));
+
+    DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
+
+    ret = (fptr->canDoFirstWrite == requestor);
+
+    DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
+    DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
+
+    return ret;
 }

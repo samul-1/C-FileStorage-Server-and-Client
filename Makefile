@@ -3,7 +3,7 @@
 CC = gcc
 
 # Compiler flags: all warnings + debugger meta-data
-CFLAGS = -Wall -g -std=c99 -pthread
+CFLAGS = -Wall -g -std=c99 -pthread -Wno-missing-braces
 
 
 # The final executable program file, i.e. name of our program

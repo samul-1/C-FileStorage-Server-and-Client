@@ -26,4 +26,6 @@ void* logFlusher(void* args) {
     snprintf(buf, 2, "]");
     fputs(buf, logFile);
     fclose(logFile);
+
+    return NULL;
 }

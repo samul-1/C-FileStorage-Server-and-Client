@@ -177,7 +177,8 @@ void* _startWorker(void* args) {
             flagBuf[2] = "";
         char
             * recvLine1,
-            * recvLine2;
+            * recvLine2,
+            * sendLine;
 
         struct fdNode* notifyList = NULL;
 
@@ -188,10 +189,10 @@ void* _startWorker(void* args) {
         }
 
         // read request code
-        DIE_ON_NEG_ONE((numRead = read(rdy_fd, requestCodeBuf, REQ_CODE_LEN)));  // todo handle error properly
+        DIE_ON_NEG_ONE((numRead = read(rdy_fd, requestCodeBuf, REQ_CODE_LEN)));
 
         if (numRead) {
-            long requestCode = atol(requestCodeBuf); // todo handle error
+            long requestCode = atol(requestCodeBuf);
             //printf("read %s - reqn %ld\n", requestCodeBuf, requestCode);
 
             // get request filepath from client
@@ -233,14 +234,28 @@ void* _startWorker(void* args) {
                 }
                 else {
                     SEND_RESPONSE_CODE(rdy_fd, OK);
-                    // todo send filenamelength,filename,contentlength,content
+                    // send file content's length and file content
+                    DIE_ON_NULL((sendLine = calloc(METADATA_SIZE + readSize + 1, 1)));
+                    snprintf(sendLine, METADATA_SIZE + 1, "%08ld", readSize);
+                    // we're not putting the "+ 1" after `METADATA_SIZE` because we want to overwrite the '\0' by `snprintf`
+                    memcpy(sendLine + METADATA_SIZE, outBuf, readSize);
+                    DIE_ON_NEG_ONE(write(rdy_fd, sendLine, METADATA_SIZE + readSize + 1));
+
+                    free(sendLine);
                     free(outBuf);
                 }
                 break;
             case WRITE_FILE:
-                // todo check conditions for writing (i.e. O_CREATE|O_LOCK)
                 puts("write");
-                // get content to write
+                // check that the last operation was `openFile` with `O_LOCK|O_CREATE`
+                if (!testFirstWrite(store, recvLine1, rdy_fd)) {
+                    SEND_RESPONSE_CODE(rdy_fd, FORBIDDEN);
+                    break;
+                }
+                // the logic of the `writeFile` operation is the same as that of `appendToFile` minus the initial check
+            case APPEND_TO_FILE:
+                puts("append");
+                // get content to write/append
                 recvLine2 = getRequestPayloadSegment(rdy_fd);
                 if (writeToFileHandler(store, recvLine1, recvLine2, &notifyList, rdy_fd) == -1) {
                     HANDLE_REQ_ERROR(rdy_fd);
@@ -252,20 +267,15 @@ void* _startWorker(void* args) {
                     NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
                 }
                 break;
-            case APPEND_TO_FILE:
-                puts("append");
-                //? same as write
-                // get file content to append
-                recvLine2 = getRequestPayloadSegment(rdy_fd);
-                break;
             case LOCK_FILE:
                 puts("lock");
+                ;
                 int outcome = lockFileHandler(store, recvLine1, rdy_fd);
                 if (outcome == -1) {
                     HANDLE_REQ_ERROR(rdy_fd);
                 }
                 else if (outcome == -2) {
-                    // client has to wait in order to acquire the lock
+                    // client has to wait in order to acquire the lock: don't send any response for now
                     putFdBack = false;
                 }
                 else {
@@ -278,7 +288,7 @@ void* _startWorker(void* args) {
                 }
                 else {
                     SEND_RESPONSE_CODE(rdy_fd, OK);
-                    if (newLock) { // a client that was waiting on this file finally acquired the lock on it
+                    if (newLock) { // another client that was waiting on this file finally acquired the lock on it
                         SEND_RESPONSE_CODE(newLock, OK);
                         // convert int to string
                         snprintf(pipeBuf, PIPE_BUF_LEN, "%04d", newLock);
@@ -315,7 +325,7 @@ void* _startWorker(void* args) {
                 free(recvLine2);
             }
 
-            if (putFdBack) { // we're done handling this request - put client fd back in readset
+            if (putFdBack) { // we're done handling this request - tell manager to put fd back in readset
                 printf("putting back %d\n", rdy_fd);
                 // convert int to string
                 snprintf(pipeBuf, PIPE_BUF_LEN, "%04d", rdy_fd);
@@ -376,8 +386,6 @@ int main(int argc, char** argv) {
     GET_VAL_OR_EXIT(configParser, "SOCKETFILENAME", sockname, DFL_SOCKNAME);
     GET_VAL_OR_EXIT(configParser, "LOGFILENAME", logfilename, DFL_LOGFILENAME);
 
-    // todo register sigaction
-    //!
     struct sigaction sig_handler;
     memset(&sig_handler, 0, sizeof(sig_handler));
     sig_handler.sa_handler = exitSigHandler;
@@ -387,10 +395,10 @@ int main(int argc, char** argv) {
     sigaddset(&handlerMask, SIGHUP);
     sigaddset(&handlerMask, SIGTSTP);
     sig_handler.sa_mask = handlerMask;
-
     DIE_ON_NEG_ONE(sigaction(SIGINT, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGHUP, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGTSTP, &sig_handler, NULL));
+    // ! remove this
     atexit(unlinkSock);
 
 
@@ -398,6 +406,7 @@ int main(int argc, char** argv) {
     CacheStorage_t* store; // in-memory file storage system
 
     pthread_t* workers; // pool of worker threads
+    pthread_t logTid; // thread that writes logs to file
 
     int fd_socket,
         fd_communication;
@@ -416,11 +425,6 @@ int main(int argc, char** argv) {
     DIE_ON_NULL((store = allocStorage(maxFileCount, maxStorageCap, replacementAlgo)));
     DIE_ON_NULL((taskBuffer = allocBoundedBuffer(MAX_TASKS, sizeof(int))));
     DIE_ON_NEG_ONE(pipe(w2mPipe)); // open worker-to-manager pipe
-
-    // todo refactor
-    pthread_t logTid;
-    struct logFlusherArgs logArgs = { "logs.json", store };
-    DIE_ON_NZ(pthread_create(&logTid, NULL, logFlusher, (void*)&logArgs));
 
     strncpy(saddr.sun_path, sockname, UNIX_PATH_MAX);
     saddr.sun_family = AF_UNIX;
@@ -444,6 +448,9 @@ int main(int argc, char** argv) {
     threadArgs->store = store;
     threadArgs->pipeOut = w2mPipe[1];
 
+    struct logFlusherArgs logArgs = { .store = store };
+    strncpy(logArgs.pathname, logfilename, MAX_LOG_PATHNAME);
+    DIE_ON_NZ(pthread_create(&logTid, NULL, logFlusher, (void*)&logArgs));
 
     DIE_ON_NULL((workers = malloc(workerPoolSize * sizeof(pthread_t))));
     // create worker threads
@@ -451,33 +458,30 @@ int main(int argc, char** argv) {
         DIE_ON_NEG_ONE(pthread_create(&workers[i], NULL, &_startWorker, (void*)threadArgs));
     }
 
-    // todo run the log flusher
 
     while (!hardExit) {
         rset = setsave; // re-initialize the read set
 
         // wait for a fd to be ready for read operation
-        puts("selecting");
         if ((select(fd_num + 1, &rset, NULL, NULL, NULL)) == -1) {
             if (errno == EINTR) {
-                puts("interrupted");
+                if (GET_CLIENT_COUNT == 0) {
+                    goto cleanup;
+                }
                 continue;
             }
             else {
                 perror("select");
-                //return EXIT_FAILURE;
+                return EXIT_FAILURE;
             }
         }
-        puts("selected");
 
         // loop through the file descriptors
         for (size_t i = 0; i < fd_num + 1; i++) {
             if (FD_ISSET(i, &rset)) { // file descriptor is ready
                 if (i == w2mPipe[0]) { // worker is done with a request
-                    puts("MESSAGE FROM PIPE");
                     // add file descriptor back into readset
                     DIE_ON_NEG_ONE(read(i, pipebuf, PIPE_BUF_LEN));
-                    printf("I JUST READ %s\n", pipebuf);
 
                     //! remove after debug
                     if (atol(pipebuf) == 0) {
@@ -523,22 +527,25 @@ int main(int argc, char** argv) {
     }
 cleanup:
     puts("cleanup");
-    // send termination message(s) to workers
     ;
+    // send termination message(s) to workers
     int term = 0;
     for (size_t i = 0; i < workerPoolSize; i++) {
         DIE_ON_NEG_ONE(enqueue(taskBuffer, (void*)&term));
     }
-
-    // todo send termination message to log flusher thread
+    // send termination message to log thread
+    DIE_ON_NEG_ONE(enqueue(store->logBuffer, "EXIT"));
 
     // wait for all threads to die
     for (size_t i = 0; i < workerPoolSize; i++) {
         DIE_ON_NEG_ONE(pthread_join(workers[i], NULL));
     }
+    DIE_ON_NEG_ONE(pthread_join(logTid, NULL));
 
-    unlink(sockname);
-    // todo wait for the log flusher
+    DIE_ON_NEG_ONE(unlink(sockname));
+    DIE_ON_NEG_ONE(close(w2mPipe[0]));
+    DIE_ON_NEG_ONE(close(w2mPipe[1]));
+
     // release resources on the heap
     destroyBoundedBuffer(taskBuffer);
     // todo make destroyStorage in filesystemApi.c

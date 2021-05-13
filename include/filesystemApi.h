@@ -27,6 +27,7 @@ typedef struct fileNode {
     bool isBeingWritten;
     size_t activeReaders;
 
+    int canDoFirstWrite; /*< Fd of the client who created the file with O_LOCK|O_CREATE and can do the first write on this file */
 
     pthread_mutex_t mutex;
     pthread_mutex_t ordering;
@@ -56,10 +57,6 @@ typedef struct cacheStorage {
 
     pthread_mutex_t mutex;
 
-    //pthread_mutex_t bufferLock;
-    //size_t logBufferSize;
-    //char* logBuffer;
-
     BoundedBuffer* logBuffer;
 
     size_t maxReachedFileNum;
@@ -88,5 +85,6 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
 int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const int requestor);
 int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requestor);
 int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode** notifyList, const int requestor);
+bool testFirstWrite(CacheStorage_t* store, const char* pathname, const int requestor);
 
 #endif
