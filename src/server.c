@@ -42,6 +42,12 @@
 #define DFL_LOGBUFSIZE 2048
 #define DFL_REPLACEMENTALGO 0
 
+#define STAT_MSG \
+"Max number of files reached: %zu\n\
+Max total storage size reached: %zu\n\
+Number of files that have been evicted by the cache: %zu\n\
+Number of files in the storage at the time of exit: %zu\n"
+
 #define HANDLE_REQ_ERROR(fd) \
 switch(errno) {\
 case ENOENT:\
@@ -386,15 +392,22 @@ int main(int argc, char** argv) {
     GET_VAL_OR_EXIT(configParser, "SOCKETFILENAME", sockname, DFL_SOCKNAME);
     GET_VAL_OR_EXIT(configParser, "LOGFILENAME", logfilename, DFL_LOGFILENAME);
 
+    destroyParser(configParser);
+
     struct sigaction sig_handler;
     memset(&sig_handler, 0, sizeof(sig_handler));
     sig_handler.sa_handler = exitSigHandler;
     sigset_t handlerMask;
+
     sigemptyset(&handlerMask);
     sigaddset(&handlerMask, SIGINT);
     sigaddset(&handlerMask, SIGHUP);
     sigaddset(&handlerMask, SIGTSTP);
+    /*     // block signals while we're installing handler
+        DIE_ON_NEG_ONE(sigprocmask(SIG_BLOCK, &handlerMask, &oldMask));
+     */
     sig_handler.sa_mask = handlerMask;
+
     DIE_ON_NEG_ONE(sigaction(SIGINT, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGHUP, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGTSTP, &sig_handler, NULL));
@@ -546,7 +559,18 @@ cleanup:
     DIE_ON_NEG_ONE(close(w2mPipe[0]));
     DIE_ON_NEG_ONE(close(w2mPipe[1]));
 
+    // we can access the thread without locking any mutex because we're the only thread left standing
+    printf(
+        STAT_MSG,
+        store->maxReachedFileNum,
+        store->maxReachedStorageSize,
+        store->numVictims,
+        store->currFileNum
+    );
+
     // release resources on the heap
     destroyBoundedBuffer(taskBuffer);
-    // todo make destroyStorage in filesystemApi.c
+    destroyStorage(store);
+    free(threadArgs);
+    free(workers);
 }

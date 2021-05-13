@@ -33,16 +33,25 @@
 
 
 static FileNode_t* getVictim(CacheStorage_t* store) {
+    /**
+     * @brief Runs the replacement algorithm that `store` is using to find a file eligible to be evicted.
+     *
+     * @note Assumes the caller has mutual exclusion over the store
+     *
+     * @return A pointer to the victim
+     *
+     */
     FileNode_t* victim = store->hPtr;
     if (store->replacementAlgo != FIFO_ALGO) {
         FileNode_t* currPtr = store->hPtr;
         while (currPtr) {
-            if ((*cmp_fns[store->replacementAlgo])(currPtr, victim) > 0) {
+            if ((*cmp_fns[store->replacementAlgo % 3])(currPtr, victim) > 0) {
                 victim = currPtr;
             }
             currPtr = currPtr->nextPtr;
         }
     }
+    store->numVictims += 1;
     return victim;
 
 }
@@ -248,8 +257,15 @@ static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode**
 
     // give back to caller the list of clients that were waiting to gain lock of this file;
     // the list needs to be later freed by caller
-    if (fptr->pendingLocks_hPtr) {
+    if (fptr->pendingLocks_hPtr && notifyList) {
         *notifyList = fptr->pendingLocks_hPtr;
+    }
+
+    // destroy list of clients that opened this file
+    while (fptr->openDescriptors) {
+        struct fdNode* tmp = fptr->openDescriptors;
+        fptr->openDescriptors = fptr->openDescriptors->nextPtr;
+        free(tmp);
     }
 
     // there are no more pending requests on the file: file is now safe to delete
@@ -298,6 +314,33 @@ CacheStorage_t* allocStorage(const size_t maxFileNum, const size_t maxStorageSiz
 
     return newStore;
 }
+
+int destroyStorage(CacheStorage_t* store) {
+    /**
+     * @note: Assumes it will be called once all but one threads have die (therefore no mutex required)
+     */
+    if (!store) {
+        errno = EINVAL;
+        return -1;
+    }
+    // free all files
+    FileNode_t* tmp;
+
+    while (store->hPtr) {
+        tmp = store->hPtr;
+        store->hPtr = store->hPtr->nextPtr;
+        destroyFile(store, tmp, NULL);
+    }
+
+    // destroy data structures and mutex
+    destroyBoundedBuffer(store->logBuffer);
+    icl_hash_destroy(store->dictStore, NULL, NULL);
+    DIE_ON_NEG_ONE(pthread_mutex_destroy(&(store->mutex)));
+
+    free(store);
+    return 0;
+}
+
 
 FileNode_t* allocFile(const char* pathname) {
     FileNode_t* newFile = calloc(sizeof(*newFile), 1);
@@ -790,7 +833,9 @@ int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const i
             int newLock = popNodeFromFdQueue(&(currPtr->pendingLocks_hPtr), -1);
 
             // communicate new lock's fd back to caller
-            pushFdToList(notifyList, newLock);
+            if (newLock > 0) {
+                pushFdToList(notifyList, newLock);
+            }
 
             currPtr->lockedBy = newLock;
         }

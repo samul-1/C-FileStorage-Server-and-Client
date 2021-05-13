@@ -61,7 +61,9 @@ typedef struct cacheStorage {
 
     size_t maxReachedFileNum;
     size_t maxReachedStorageSize;
+    size_t numVictims;
 } CacheStorage_t;
+
 
 // ! remove
 FileNode_t* allocFile(const char* pathname);
@@ -75,6 +77,7 @@ void freeFdList(struct fdNode* h);
 // ! end remove
 
 CacheStorage_t* allocStorage(const size_t maxFileNum, const size_t maxStorageSize, const short replacementAlgo);
+int destroyStorage(CacheStorage_t* store);
 
 int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, struct fdNode** notifyList, const int requestor);
 

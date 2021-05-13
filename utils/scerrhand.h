@@ -14,7 +14,7 @@
 
 #define DIE_ON_NZ(v)\
     do {\
-        if (v) {\
+        if ((v) && errno != EINTR) {\
             perror(#v);\
             exit(EXIT_FAILURE);\
         }\
