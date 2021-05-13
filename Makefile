@@ -7,11 +7,11 @@ CFLAGS = -Wall -g -std=c99 -pthread -Wno-missing-braces
 
 
 # The final executable program file, i.e. name of our program
-BIN = server client dummyclient
+BIN = server dummyclient2 dummyclient
 BINDIR = build
 
 # Object files from which $BIN depends
-OBJS = obj/filesystemApi.o obj/log.o obj/boundedbuffer.o obj/cacheFns.o obj/icl_hash.o obj/fileparser.o
+OBJS = obj/filesystemApi.o obj/log.o obj/boundedbuffer.o obj/cacheFns.o obj/icl_hash.o obj/fileparser.o obj/clientApi.o
 
 # Path of Object files
 OBJDIR = obj

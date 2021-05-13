@@ -5,9 +5,7 @@
 #define FILE_NOT_FOUND 2
 #define FORBIDDEN 3
 #define FILE_TOO_BIG 4
-#define BAD_MSG 5
-#define BYE 6
-#define INTERNAL_SERVER_ERROR 7
-#define BAD_REQUEST 8
+#define INTERNAL_SERVER_ERROR 5
+#define BAD_REQUEST 6
 
 #endif

@@ -3,7 +3,11 @@
 
 #include <errno.h>
 #include <math.h>
+#include <string.h>
 #include <ctype.h>
+
+#define MAX(a,b) (a) > (b) ? (a) : (b)
+
 
 /**
  * \brief Controlla se la stringa passata come primo argomento e' un numero.
@@ -23,31 +27,31 @@ static inline int isNumber(const char* s, long* n) {
     return 1;   // non e' un numero
 }
 
-char* numToStr(long n) {
-    /**
-     * @brief Takes in a `long`; returns that number as a string.
-     *
-     * @param n The number fo stringify.
-     * @note This function allocates memory on the heap. The caller needs to call `free` on it.
-     *
-     * @return The given number a string.
-     */
-    bool negative = (n < 0);
-    const size_t nDigits = n ? (floor(log10(abs(n))) + 1) : 1; // a base-10 number always has 1 + int-part of its log10 digits
-    char* ret = calloc(nDigits + (negative ? 2 : 1), 1);
-    if (!ret) {
-        errno = ENOMEM;
-        return NULL;
-    }
-    for (size_t i = 0; i < nDigits; i++) {
-        unsigned short currDigit = abs(n) % 10;
-        ret[nDigits - (negative ? 0 : 1) - i] = '0' + currDigit;
-        n /= 10;
-    }
-    if (negative) {
-        ret[0] = '-';
-    }
-    return ret;
-}
+// char* numToStr(long n) {
+//     /**
+//      * @brief Takes in a `long`; returns that number as a string.
+//      *
+//      * @param n The number fo stringify.
+//      * @note This function allocates memory on the heap. The caller needs to call `free` on it.
+//      *
+//      * @return The given number a string.
+//      */
+//     bool negative = (n < 0);
+//     const size_t nDigits = n ? (floor(log10(abs(n))) + 1) : 1; // a base-10 number always has 1 + int-part of its log10 digits
+//     char* ret = calloc(nDigits + (negative ? 2 : 1), 1);
+//     if (!ret) {
+//         errno = ENOMEM;
+//         return NULL;
+//     }
+//     for (size_t i = 0; i < nDigits; i++) {
+//         unsigned short currDigit = abs(n) % 10;
+//         ret[nDigits - (negative ? 0 : 1) - i] = '0' + currDigit;
+//         n /= 10;
+//     }
+//     if (negative) {
+//         ret[0] = '-';
+//     }
+//     return ret;
+// }
 
 #endif

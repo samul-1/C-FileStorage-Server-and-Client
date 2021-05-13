@@ -20,17 +20,14 @@
 #include "../utils/flags.h"
 #include "../include/log.h"
 #include "../utils/misc.h"
+#include "../include/clientServerProtocol.h"
 #include <errno.h>
 
 #define UNIX_PATH_MAX 108
 #define MAX_CONN 10
-#define MAX_MSG_LEN 6094
-#define MAX(a,b) (a) > (b) ? (a) : (b)
 #define MAX_TASKS 2048
 
-#define REQ_CODE_LEN 1
 #define PIPE_BUF_LEN 5
-#define METADATA_SIZE 8 // todo move this to a protocol header file
 
 #define DFL_POOLSIZE 10
 #define DFL_MAXSTORAGECAP 10000
@@ -47,6 +44,10 @@
 Max total storage size reached: %zu\n\
 Number of files that have been evicted by the cache: %zu\n\
 Number of files in the storage at the time of exit: %zu\n"
+
+#define SEND_RESPONSE_CODE(fd, code) \
+snprintf(codeBuf, RES_CODE_LEN+1, "%d", code);\
+DIE_ON_NEG_ONE(write(fd, codeBuf, RES_CODE_LEN));
 
 #define HANDLE_REQ_ERROR(fd) \
 switch(errno) {\
@@ -79,8 +80,6 @@ case EACCES:\
     }\
     exit(EXIT_FAILURE);\
 }
-
-#define SEND_RESPONSE_CODE(fd, code) printf("sending response code %d\n", code) // todo make this
 
 
 #define NOTIFY_PENDING_CLIENTS(notifyList, notifyCode, pipeBuf, pipeOut)\
@@ -174,6 +173,8 @@ void* _startWorker(void* args) {
             rdy_fd = 0,
             newLock = 0;
 
+        char codeBuf[RES_CODE_LEN + 1] = "";
+
         ssize_t numRead = 0;
         bool putFdBack = true;
 
@@ -194,8 +195,16 @@ void* _startWorker(void* args) {
             break; // termination message
         }
 
+        // char tmpbuf[2];
+        // while (1) {
+        //     read(rdy_fd, tmpbuf, 1);
+        //     printf("%s", tmpbuf);
+        //     fflush(NULL);
+        //     goto putback;
+        // }
         // read request code
         DIE_ON_NEG_ONE((numRead = read(rdy_fd, requestCodeBuf, REQ_CODE_LEN)));
+        printf("%s ", requestCodeBuf);
 
         if (numRead) {
             long requestCode = atol(requestCodeBuf);
@@ -203,6 +212,7 @@ void* _startWorker(void* args) {
 
             // get request filepath from client
             recvLine1 = getRequestPayloadSegment(rdy_fd);
+            printf("%s", recvLine1);
             switch (requestCode) {
             case OPEN_FILE:
                 printf("open %s\n", recvLine1);
@@ -318,21 +328,22 @@ void* _startWorker(void* args) {
                 break;
             default:
                 puts("unknown");
+                printf("\n\n---\n- %ld\n- %s\n\n-----\n", requestCode, codeBuf);
                 SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
             }
-            puts("Store:");
-            printStore(store);
-            puts("Affected file:");
-            printFile(store, recvLine1);
+            // puts("Store:");
+            // printStore(store);
+            // puts("Affected file:");
+            // printFile(store, recvLine1);
 
             // free the resources allocated to handle the request
             free(recvLine1);
             if (requestCode == WRITE_FILE || requestCode == APPEND_TO_FILE) {
                 free(recvLine2);
             }
-
+        putback:
             if (putFdBack) { // we're done handling this request - tell manager to put fd back in readset
-                printf("putting back %d\n", rdy_fd);
+                //printf("putting back %d\n", rdy_fd);
                 // convert int to string
                 snprintf(pipeBuf, PIPE_BUF_LEN, "%04d", rdy_fd);
                 // tell manager we're done handling the request
@@ -364,6 +375,7 @@ int main(int argc, char** argv) {
     DIE_ON_NULL((configParser = parseFile("config.txt", "=")));
 
     if (parserTestErr(configParser)) {
+        fprintf(stderr, "Error parsing the config file: ");
         printErrAsStr(configParser);
         return EXIT_FAILURE;
     }
@@ -526,7 +538,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 else { // new request from already connected client
-                    puts("new request");
+                    //puts("new request");
                     void* fd = &i;
                     FD_CLR(i, &setsave);
                     if (i == fd_num) {

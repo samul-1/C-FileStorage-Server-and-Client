@@ -32,20 +32,21 @@
     }
 
 
-static FileNode_t* getVictim(CacheStorage_t* store) {
+static FileNode_t* getVictim(CacheStorage_t* store, FileNode_t* spare) {
     /**
      * @brief Runs the replacement algorithm that `store` is using to find a file eligible to be evicted.
      *
+     * @param spare Pointer to a file that should never be chosen as the victim
      * @note Assumes the caller has mutual exclusion over the store
      *
      * @return A pointer to the victim
      *
      */
-    FileNode_t* victim = store->hPtr;
+    FileNode_t* victim = (store->hPtr != spare) ? store->hPtr : store->hPtr->nextPtr;
     if (store->replacementAlgo != FIFO_ALGO) {
         FileNode_t* currPtr = store->hPtr;
         while (currPtr) {
-            if ((*cmp_fns[store->replacementAlgo % 3])(currPtr, victim) > 0) {
+            if (currPtr != spare && (*cmp_fns[store->replacementAlgo % 3])(currPtr, victim) > 0) {
                 victim = currPtr;
             }
             currPtr = currPtr->nextPtr;
@@ -274,6 +275,9 @@ static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode**
 
     DIE_ON_NZ(pthread_cond_destroy(&(fptr->rwCond)));
 
+    DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
+    DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
+
     DIE_ON_NZ(pthread_mutex_destroy(&(fptr->mutex)));
     DIE_ON_NZ(pthread_mutex_destroy(&(fptr->ordering)));
 
@@ -499,7 +503,7 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
 
     if (!alreadyExists) {
         if (store->currFileNum == store->maxFileNum) {
-            FileNode_t* victim = getVictim(store);
+            FileNode_t* victim = getVictim(store, NULL);
             destroyFile(store, victim, notifyList);
         }
         fPtr = allocFile(pathname);
@@ -683,9 +687,9 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         logEvent(store->logBuffer, "WRITE", pathname, errnosave, requestor, 0);
         goto cleanup;
     }
-    // ? what happens if the file evicted to make room for new content is this file itself?
     while (store->currStorageSize + newContentLen > store->maxStorageSize) {
-        FileNode_t* victim = getVictim(store);
+        // we pass `fptr` as the second param to `getVictim` to prevent the file we're writing to from being chosen as the victim
+        FileNode_t* victim = getVictim(store, fptr);
         assert(victim);
         struct fdNode* tmpList = NULL; // will hold a list of fd's that were waiting on this file before it got deleted
         destroyFile(store, victim, &tmpList);

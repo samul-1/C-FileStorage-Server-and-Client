@@ -1,4 +1,5 @@
-
+#ifndef LOG_H
+#define LOG_H
 
 #define EVENT_SLOT_SIZE 10000
 #define EVENT_BUF_CAP 50000
@@ -12,3 +13,5 @@ struct logFlusherArgs {
 };
 
 void* logFlusher(void* args);
+
+#endif
