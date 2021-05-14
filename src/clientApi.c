@@ -7,9 +7,15 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/stat.h>
 #include <stdio.h>
+#include <limits.h>
+
 
 bool PRINTS_ENABLED = false;
+
+char* realpath(const char* restrict path,
+    char* restrict resolved_path);
 
 const char* errMessages[] = {
     "OK",
@@ -66,6 +72,107 @@ PRINT_IF_ENABLED(stderr, op, filepath, errMessages[errCode-1]);
     }
 }*/
 
+
+static int _mkdir(const char* dir) {
+    /**
+     * @brief Recursively creates directories
+     *
+     * @note Adapted from http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
+     *
+     */
+    char tmp[256];
+    char* p = NULL;
+    size_t len;
+    puts(dir);
+    snprintf(tmp, sizeof(tmp), "%s", dir);
+    len = strlen(tmp);
+    if (tmp[len - 1] == '/')
+        tmp[len - 1] = 0;
+    for (p = tmp + 1; *p; p++)
+        if (*p == '/') {
+            *p = 0;
+            if (mkdir(tmp, S_IRWXU) == -1) {
+                return -1;
+            };
+            *p = '/';
+        }
+    mkdir(tmp, S_IRWXU);
+    return 0;
+}
+
+static int storeFiles(const char* dirname) {
+    /**
+     * todo write docs
+     */
+    char filemetadataBuf[METADATA_SIZE + 1] = "";
+    while (true) {
+        // read length of filepath
+        DIE_ON_NEG_ONE(read(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
+        size_t filepathLen = atol(filemetadataBuf);
+
+        if (filepathLen == 0) {
+            // no more files to read
+            break;
+        }
+
+        char* filepathBuf = calloc(filepathLen + strlen(dirname) + 2, 1);
+        if (!filepathBuf) {
+            errno = ENOMEM;
+            return -1;
+        }
+
+        // read path of the file
+        DIE_ON_NEG_ONE(read(SOCKET_FD, filepathBuf + strlen(dirname) + 1, filepathLen));
+        // prepend the argument `dirname` + /
+        strncpy(filepathBuf, dirname, strlen(dirname));
+        filepathBuf[strlen(dirname)] = '/';
+
+        // split file name from rest of path and recursively create the directories
+        char* lastSlash = strrchr(filepathBuf, '/');
+        if (lastSlash) {
+            *lastSlash = '\0';
+            // just pass the directories without the filename
+            if (_mkdir(filepathBuf) == -1) {
+                int errnosave = errno;
+                free(filepathBuf);
+                errno = errnosave;
+                return -1;
+            }
+            *lastSlash = '/';
+        }
+
+        // read size of content of the file
+        DIE_ON_NEG_ONE(read(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
+        size_t filecontentLen = atol(filemetadataBuf);
+        char* filecontentBuf = calloc(filecontentLen + 1, 1);
+        if (!filecontentBuf) {
+            free(filepathBuf);
+            errno = ENOMEM;
+            return -1;
+        }
+        // read content of the file
+        // todo use readn
+        DIE_ON_NEG_ONE(read(SOCKET_FD, filecontentBuf, filecontentLen));
+
+        FILE* fp = fopen(filepathBuf, "w+");
+        if (fp == NULL) {
+            return -1;
+        }
+        if (fwrite(filecontentBuf, 1, filecontentLen, fp) <= 0) {
+            int errnosave = errno;
+            if (ferror(fp)) {
+                errno = errnosave;
+                return -1;
+            }
+        }
+        fclose(fp);
+
+        free(filecontentBuf);
+        free(filepathBuf);
+    }
+    return 0;
+}
+
 //int openConnection(const char* sockname, int msec, const struct timespec abstime);
 
 //int closeConnection(const char* sockname);
@@ -107,6 +214,7 @@ int openFile(const char* pathname, int flags) {
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
+
     return 0;
 }
 
@@ -180,7 +288,6 @@ int writeFile(const char* pathname, const char* dirname) {
     size_t pathnameLen = strlen(pathname);
     FILE* fp = fopen(pathname, "r");
     if (!fp) {
-        perror("fopen");
         return -1;
     }
 
@@ -201,6 +308,8 @@ int writeFile(const char* pathname, const char* dirname) {
             return -1;
         }
     }
+
+    fclose(fp);
 
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + filecontentLen + 1;
     char* req = calloc(reqLen, 1);
@@ -239,11 +348,19 @@ int writeFile(const char* pathname, const char* dirname) {
         return -1;
     }
 
-    // todo handle saving files sent from server
+    if (storeFiles(dirname) == -1) {
+        return -1;
+    }
     return 0;
 }
 
+
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname) {
+    if (pathname == NULL || buf == NULL || size == 0 || dirname == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
     size_t pathnameLen = strlen(pathname);
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + size + 1;
     char* req = calloc(reqLen, 1);
@@ -279,32 +396,9 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
         return -1;
     }
 
-    char evictedBuf[100000] = "";
-    do {
-        DIE_ON_NEG_ONE(read(SOCKET_FD, evictedBuf, METADATA_SIZE));
-        //puts("first read of 8 bytes");
-        size_t filepathLen = atol(evictedBuf);
-        if (filepathLen > 0) {
-            char* recvLine2 = calloc(filepathLen + 1, 1);
-            //puts("second read of 1 byte");
-            DIE_ON_NEG_ONE(read(SOCKET_FD, recvLine2, filepathLen));
-            //puts(recvLine2);
-            printf("file path: %s\n", recvLine2);
-            //puts("third read of 8 bytes");
-            DIE_ON_NEG_ONE(read(SOCKET_FD, evictedBuf, METADATA_SIZE));
-            size_t filecontentLen = atol(evictedBuf);
-            char* recvLine3 = calloc(filecontentLen + 1, 1);
-            DIE_ON_NEG_ONE(read(SOCKET_FD, recvLine3, filecontentLen));
-            printf("file content: %s\n", recvLine3);
-            //puts("fourth read of 10 bytes");
-            //puts(recvLine3);
-        }
-        else {
-            break;
-        };
-    } while (true);
-
-    // todo handle saving files sent from server
+    if (storeFiles(dirname) == -1) {
+        return -1;
+    }
     return 0;
 }
 

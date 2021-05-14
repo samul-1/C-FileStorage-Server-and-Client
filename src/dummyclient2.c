@@ -98,14 +98,16 @@ int main(int argc, char** argv) {
             fgets(write2buf, MAX_MSG_LEN, stdin);
             write2buf[strlen(write2buf) - 1] = '\0';
 
-            appendToFile(writeBuf, write2buf, strlen(write2buf), NULL);
+            if (appendToFile(writeBuf, write2buf, strlen(write2buf), "downloadsAppend") == -1) {
+                perror("append");
+            }
         }
         else if (!strncmp(writeBuf, "write", 5)) {
             // name
             fgets(writeBuf, MAX_MSG_LEN, stdin);
             writeBuf[strlen(writeBuf) - 1] = '\0';
 
-            writeFile(writeBuf, NULL);
+            writeFile(writeBuf, "downloadsWrite");
         }
         else if (!strncmp(writeBuf, "lock", 4)) {
             // name
