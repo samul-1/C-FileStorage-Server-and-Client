@@ -688,11 +688,10 @@ cleanup:
     *buf = ret;
     *size = retCurrSize;
 
-    puts(ret);
+    printf("return %s\n return length %zu\n actual length %zu\n", ret, retCurrSize, strlen(ret));
 
     errno = errnosave ? errnosave : errno;
     return errno ? -1 : readCount;
-
 }
 
 int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* newContent, struct fdNode** notifyList, FileNode_t** evictedList, const int requestor) {
