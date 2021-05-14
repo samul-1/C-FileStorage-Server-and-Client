@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <limits.h>
 
-
 bool PRINTS_ENABLED = false;
 
 char* realpath(const char* restrict path,
@@ -121,7 +120,12 @@ static int _mkdir(const char* dir) {
 
 static int storeFiles(const char* dirname) {
     /**
-     * todo write docs
+     * @brief Reads files sent by the server and stores them under `dirname`.
+     *
+     * @param dirname Directory under which the read files are to be stored.
+     *
+     * @return the number of files received on success, -1 on error (sets `errno`)
+     *
      */
     char filemetadataBuf[METADATA_SIZE + 1] = "";
     int count = 0;
@@ -156,8 +160,8 @@ static int storeFiles(const char* dirname) {
             *lastSlash = '\0';
             // just pass the directories without the filename
             if (_mkdir(filepathBuf) == -1) {
-                perror("mkdir");
                 int errnosave = errno;
+                perror("mkdir");
                 free(filepathBuf);
                 errno = errnosave;
                 return -1;
@@ -178,6 +182,7 @@ static int storeFiles(const char* dirname) {
         // todo use readn
         DIE_ON_NEG_ONE(read(SOCKET_FD, filecontentBuf, filecontentLen));
 
+        // now save file to disk
         FILE* fp = fopen(filepathBuf, "w+");
         if (fp == NULL) {
             return -1;
@@ -202,6 +207,10 @@ static int storeFiles(const char* dirname) {
 //int closeConnection(const char* sockname);
 
 int openFile(const char* pathname, int flags) {
+    if (!pathname || !strlen(pathname)) {
+        errno = EINVAL;
+        return -1;
+    }
     size_t pathnameLen = strlen(pathname);
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + OPEN_FLAG_LEN + pathnameLen + 1;
     char* req = calloc(reqLen, 1);
@@ -215,70 +224,43 @@ int openFile(const char* pathname, int flags) {
     if (write(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
-    puts(req);
-
-
     free(req);
 
     char recvLine[RES_CODE_LEN + 1] = "";
     WAIT_FOR_RESPONSE(recvLine, Open, pathname);
-    // // wait for response
-    // if (read(SOCKET_FD, recvLine, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    // long responseCode;
-
-    // if (isNumber(recvLine, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, Open, pathname, "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // if (responseCode == OK) {
-    //     PRINT_IF_ENABLED(stdout, Open, pathname, "OK\n");
-    // }
-    // else {
-    //     PRINT_ERR_IF_ENABLED(Open, pathname, responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
 
     return 0;
 }
 
 int readNFiles(int N, const char* dirname) {
+    if (!dirname || !strlen(dirname)) {
+        errno = EINVAL;
+        return -1;
+    }
+
     char req[METADATA_SIZE + REQ_CODE_LEN + 1];
+
+    // construct request message
     snprintf(req, METADATA_SIZE + REQ_CODE_LEN + 1, "%d%08d", READ_N_FILES, N);
 
     if (write(SOCKET_FD, req, METADATA_SIZE + REQ_CODE_LEN) == -1) {
         return -1;
     }
-    // puts("WRITTEN TO SOCKET");
-    // puts(req);
-    char recvLine1[RES_CODE_LEN + 1] = "";
 
-    // wait for response
-    // if (read(SOCKET_FD, recvLine1, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    //printf("I JUST READ %s\n", recvLine1);
-    WAIT_FOR_RESPONSE(recvLine1, ReadNFiles, "");
-    // long responseCode;
-    // if (isNumber(recvLine1, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, ReadNFiles, "", "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // else if (responseCode != OK) { // there's nothing else to read in the response
-    //     PRINT_ERR_IF_ENABLED(ReadNFiles, "", responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
+    char recvLine[RES_CODE_LEN + 1] = "";
+    WAIT_FOR_RESPONSE(recvLine, ReadNFiles, "");
 
-    storeFiles(dirname);
+    if (storeFiles(dirname) == -1) {
+        return -1;
+    }
     return 0;
 }
 
 int readFile(const char* pathname, void** buf, size_t* size) {
+    if (!pathname || !strlen(pathname) || !buf || !size) {
+        errno = EINVAL;
+        return -1;
+    }
     size_t pathnameLen = strlen(pathname);
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + 1;
     char* req = calloc(reqLen, 1);
@@ -294,7 +276,6 @@ int readFile(const char* pathname, void** buf, size_t* size) {
     if (write(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
-
     free(req);
 
     char
@@ -303,21 +284,6 @@ int readFile(const char* pathname, void** buf, size_t* size) {
         * recvLine3; // for the rest of the response
 
     WAIT_FOR_RESPONSE(recvLine1, Read, pathname);
-    // // wait for response
-    // if (read(SOCKET_FD, recvLine1, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    // long responseCode;
-    // if (isNumber(recvLine1, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, Read, pathname, "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // else if (responseCode != OK) { // there's nothing else to read in the response
-    //     PRINT_ERR_IF_ENABLED(Read, pathname, responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
 
     // read size of file content
     if (read(SOCKET_FD, recvLine2, METADATA_SIZE) == -1) {
@@ -329,7 +295,7 @@ int readFile(const char* pathname, void** buf, size_t* size) {
         errno = EINVAL;
         return -1;
     }
-
+    // allocate space for the file content
     recvLine3 = calloc(responseSize + 1, 1);
     if (!recvLine3) {
         return -1;
@@ -346,25 +312,36 @@ int readFile(const char* pathname, void** buf, size_t* size) {
 }
 
 int writeFile(const char* pathname, const char* dirname) {
+    if (!pathname || !strlen(pathname)) {
+        errno = EINVAL;
+        return -1;
+    }
     size_t pathnameLen = strlen(pathname);
     FILE* fp = fopen(pathname, "r");
     if (!fp) {
         return -1;
     }
 
+    // find out file size
     if (fseek(fp, 0L, SEEK_END) == -1) {
         return -1;
     }
     size_t filecontentLen = ftell(fp);
+    if (filecontentLen < 0) {
+        return -1;
+    }
     rewind(fp);
 
     char* filecontentBuf = calloc(filecontentLen + 1, 1);
     if (!filecontentBuf) {
+        fclose(fp);
+        errno = ENOMEM;
         return -1;
     }
     if (fread(filecontentBuf, sizeof(char), filecontentLen, fp) <= 0) {
         int errnosave = errno;
         if (ferror(fp)) {
+            fclose(fp);
             errno = errnosave;
             return -1;
         }
@@ -391,27 +368,8 @@ int writeFile(const char* pathname, const char* dirname) {
     char recvLine[RES_CODE_LEN + 1] = "";
 
     WAIT_FOR_RESPONSE(recvLine, Write, pathname);
-    // // wait for response
-    // if (read(SOCKET_FD, recvLine, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    // long responseCode;
 
-    // if (isNumber(recvLine, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, Write, pathname, "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // if (responseCode == OK) {
-    //     PRINT_IF_ENABLED(stdout, Write, pathname, "OK");
-    // }
-    // else {
-    //     PRINT_ERR_IF_ENABLED(Write, pathname, responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
-
-    if (storeFiles(dirname) == -1) {
+    if (dirname && storeFiles(dirname) == -1) {
         return -1;
     }
     return 0;
@@ -419,7 +377,7 @@ int writeFile(const char* pathname, const char* dirname) {
 
 
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname) {
-    if (pathname == NULL || buf == NULL || size == 0 || dirname == NULL) {
+    if (pathname == NULL || buf == NULL || size == 0 || !strlen(pathname)) {
         errno = EINVAL;
         return -1;
     }
@@ -441,33 +399,18 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     char recvLine[RES_CODE_LEN + 1] = "";
 
     WAIT_FOR_RESPONSE(recvLine, Append, pathname);
-    // // wait for response
-    // if (read(SOCKET_FD, recvLine, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    // long responseCode;
 
-    // if (isNumber(recvLine, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, Append, pathname, "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // if (responseCode == OK) {
-    //     PRINT_IF_ENABLED(stdout, Append, pathname, "OK");
-    // }
-    // else {
-    //     PRINT_ERR_IF_ENABLED(Append, pathname, responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
-
-    if (storeFiles(dirname) == -1) {
+    if (dirname && storeFiles(dirname) == -1) {
         return -1;
     }
     return 0;
 }
 
 int lockFile(const char* pathname) {
+    if (!pathname || !strlen(pathname)) {
+        errno = EINVAL;
+        return -1;
+    }
     size_t pathnameLen = strlen(pathname);
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + 1;
     char* req = calloc(reqLen, 1);
@@ -478,7 +421,6 @@ int lockFile(const char* pathname) {
 
     // construct request message
     snprintf(req, reqLen + 1, "%d%08ld%s", LOCK_FILE, pathnameLen, pathname);
-    // puts(req);
 
     // todo use writen
     if (write(SOCKET_FD, req, reqLen - 1) == -1) {
@@ -490,29 +432,16 @@ int lockFile(const char* pathname) {
     char recvLine[RES_CODE_LEN + 1] = "";
 
     WAIT_FOR_RESPONSE(recvLine, Lock, pathname);
-    // // wait for response
-    // if (read(SOCKET_FD, recvLine, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    // long responseCode;
 
-    // if (isNumber(recvLine, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, Lock, pathname, "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // if (responseCode == OK) {
-    //     PRINT_IF_ENABLED(stdout, Lock, pathname, "OK");
-    // }
-    // else {
-    //     PRINT_ERR_IF_ENABLED(Lock, pathname, responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
     return 0;
 }
 
 int unlockFile(const char* pathname) {
+    if (!pathname || !strlen(pathname)) {
+        errno = EINVAL;
+        return -1;
+    }
+
     size_t pathnameLen = strlen(pathname);
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + 1;
     char* req = calloc(reqLen, 1);
@@ -523,7 +452,6 @@ int unlockFile(const char* pathname) {
 
     // construct request message
     snprintf(req, reqLen + 1, "%d%08ld%s", UNLOCK_FILE, pathnameLen, pathname);
-    // puts(req);
 
     // todo use writen
     if (write(SOCKET_FD, req, reqLen - 1) == -1) {
@@ -535,29 +463,16 @@ int unlockFile(const char* pathname) {
     char recvLine[RES_CODE_LEN + 1];
 
     WAIT_FOR_RESPONSE(recvLine, Unlock, pathname);
-    // // wait for response
-    // if (read(SOCKET_FD, recvLine, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    // long responseCode;
 
-    // if (isNumber(recvLine, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, Unlock, pathname, "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // if (responseCode == OK) {
-    //     PRINT_IF_ENABLED(stdout, Unlock, pathname, "OK");
-    // }
-    // else {
-    //     PRINT_ERR_IF_ENABLED(Unlock, pathname, responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
     return 0;
 }
 
 int closeFile(const char* pathname) {
+    if (!pathname || !strlen(pathname)) {
+        errno = EINVAL;
+        return -1;
+    }
+
     size_t pathnameLen = strlen(pathname);
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + 1;
     char* req = calloc(reqLen, 1);
@@ -578,31 +493,17 @@ int closeFile(const char* pathname) {
     free(req);
 
     char recvLine[RES_CODE_LEN + 1];
-
     WAIT_FOR_RESPONSE(recvLine, Close, pathname);
-    // // wait for response
-    // if (read(SOCKET_FD, recvLine, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    // long responseCode;
 
-    // if (isNumber(recvLine, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, Close, pathname, "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // if (responseCode == OK) {
-    //     PRINT_IF_ENABLED(stdout, Close, pathname, "OK");
-    // }
-    // else {
-    //     PRINT_ERR_IF_ENABLED(Close, pathname, responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
     return 0;
 }
 
 int removeFile(const char* pathname) {
+    if (!pathname || !strlen(pathname)) {
+        errno = EINVAL;
+        return -1;
+    }
+
     size_t pathnameLen = strlen(pathname);
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + 1;
     char* req = calloc(reqLen, 1);
@@ -623,26 +524,7 @@ int removeFile(const char* pathname) {
     free(req);
 
     char recvLine[RES_CODE_LEN + 1];
-
     WAIT_FOR_RESPONSE(recvLine, Remove, pathname);
-    // // wait for response
-    // if (read(SOCKET_FD, recvLine, RES_CODE_LEN) == -1) {
-    //     return -1;
-    // }
-    // long responseCode;
 
-    // if (isNumber(recvLine, &responseCode) != 0) {
-    //     PRINT_IF_ENABLED(stderr, Remove, pathname, "Invalid response from server.\n");
-    //     errno = EINVAL;
-    //     return -1;
-    // }
-    // if (responseCode == OK) {
-    //     PRINT_IF_ENABLED(stdout, Remove, pathname, "OK");
-    // }
-    // else {
-    //     PRINT_ERR_IF_ENABLED(Remove, pathname, responseCode);
-    //     ERR_CODE_TO_ERRNO(responseCode);
-    //     return -1;
-    // }
     return 0;
 }
