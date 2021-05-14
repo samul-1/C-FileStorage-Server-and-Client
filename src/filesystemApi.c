@@ -660,7 +660,7 @@ int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, 
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
     FileNode_t* currPtr = store->hPtr;
 
-    while (currPtr && readCount != upperLimit) {
+    while (currPtr && (readCount != upperLimit || upperLimit <= 0)) {
         size_t retNewSize = retCurrSize + currPtr->contentSize + strlen(currPtr->pathname) + 2 * METADATA_SIZE;
         if (retNewSize > retMaxSize) {
             void* tmp = realloc(ret, 2 * retNewSize);

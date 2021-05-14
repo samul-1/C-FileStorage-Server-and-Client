@@ -83,7 +83,7 @@ static int _mkdir(const char* dir) {
     char tmp[256];
     char* p = NULL;
     size_t len;
-    puts(dir);
+    //puts(dir);
     snprintf(tmp, sizeof(tmp), "%s", dir);
     len = strlen(tmp);
     if (tmp[len - 1] == '/')
@@ -129,13 +129,15 @@ static int storeFiles(const char* dirname) {
         // prepend the argument `dirname` + /
         strncpy(filepathBuf, dirname, strlen(dirname));
         filepathBuf[strlen(dirname)] = '/';
+        // puts(filepathBuf);
 
-        // split file name from rest of path and recursively create the directories
+         // split file name from rest of path and recursively create the directories
         char* lastSlash = strrchr(filepathBuf, '/');
         if (lastSlash) {
             *lastSlash = '\0';
             // just pass the directories without the filename
             if (_mkdir(filepathBuf) == -1) {
+                perror("mkdir");
                 int errnosave = errno;
                 free(filepathBuf);
                 errno = errnosave;
@@ -230,15 +232,15 @@ int readNFiles(int N, const char* dirname) {
     if (write(SOCKET_FD, req, METADATA_SIZE + REQ_CODE_LEN) == -1) {
         return -1;
     }
-    puts("WRITTEN TO SOCKET");
-    puts(req);
+    // puts("WRITTEN TO SOCKET");
+    // puts(req);
     char recvLine1[RES_CODE_LEN + 1] = "";
 
     // wait for response
     if (read(SOCKET_FD, recvLine1, RES_CODE_LEN) == -1) {
         return -1;
     }
-    printf("I JUST READ %s\n", recvLine1);
+    //printf("I JUST READ %s\n", recvLine1);
     long responseCode;
     if (isNumber(recvLine1, &responseCode) != 0) {
         PRINT_IF_ENABLED(stderr, ReadNFiles, "", "Invalid response from server.\n");
