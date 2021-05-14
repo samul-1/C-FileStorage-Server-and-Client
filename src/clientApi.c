@@ -41,7 +41,7 @@ if(PRINTS_ENABLED) {\
 #define PRINT_ERR_IF_ENABLED(op, filepath, errCode) \
 PRINT_IF_ENABLED(stderr, op, filepath, errMessages[errCode-1]);
 
-#define ERR_CODE_TO_ERRNO(errCode) (errno = errnoMap[errCode-1])
+#define ERR_CODE_TO_ERRNO(errCode) (errno = errnoMap[errCode-1]);
 
 /* static char* constructRequest(int reqCode, char* segment1, char* segment2) {
     size_t reqLen = INITIAL_REQ_SIZ;
@@ -105,6 +105,7 @@ static int storeFiles(const char* dirname) {
      * todo write docs
      */
     char filemetadataBuf[METADATA_SIZE + 1] = "";
+    int count = 0;
     while (true) {
         // read length of filepath
         DIE_ON_NEG_ONE(read(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
@@ -114,6 +115,8 @@ static int storeFiles(const char* dirname) {
             // no more files to read
             break;
         }
+
+        count += 1;
 
         char* filepathBuf = calloc(filepathLen + strlen(dirname) + 2, 1);
         if (!filepathBuf) {
@@ -170,7 +173,7 @@ static int storeFiles(const char* dirname) {
         free(filecontentBuf);
         free(filepathBuf);
     }
-    return 0;
+    return count;
 }
 
 //int openConnection(const char* sockname, int msec, const struct timespec abstime);
@@ -191,6 +194,8 @@ int openFile(const char* pathname, int flags) {
     if (write(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
+    puts(req);
+
 
     free(req);
 
@@ -215,6 +220,38 @@ int openFile(const char* pathname, int flags) {
         return -1;
     }
 
+    return 0;
+}
+
+int readNFiles(int N, const char* dirname) {
+    char req[METADATA_SIZE + REQ_CODE_LEN + 1];
+    snprintf(req, METADATA_SIZE + REQ_CODE_LEN + 1, "%d%08d", READ_N_FILES, N);
+
+    if (write(SOCKET_FD, req, METADATA_SIZE + REQ_CODE_LEN) == -1) {
+        return -1;
+    }
+    puts("WRITTEN TO SOCKET");
+    puts(req);
+    char recvLine1[RES_CODE_LEN + 1] = "";
+
+    // wait for response
+    if (read(SOCKET_FD, recvLine1, RES_CODE_LEN) == -1) {
+        return -1;
+    }
+    printf("I JUST READ %s\n", recvLine1);
+    long responseCode;
+    if (isNumber(recvLine1, &responseCode) != 0) {
+        PRINT_IF_ENABLED(stderr, ReadNFiles, "", "Invalid response from server.\n");
+        errno = EINVAL;
+        return -1;
+    }
+    else if (responseCode != OK) { // there's nothing else to read in the response
+        PRINT_ERR_IF_ENABLED(ReadNFiles, "", responseCode);
+        ERR_CODE_TO_ERRNO(responseCode);
+        return -1;
+    }
+
+    storeFiles(dirname);
     return 0;
 }
 

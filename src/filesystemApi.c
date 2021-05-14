@@ -15,6 +15,7 @@
 #include "../utils/flags.h"
 #include "../include/log.h"
 #include "../include/cacheFns.h"
+#include "../include/clientServerProtocol.h"
 
 #define MAX(a,b) (a) > (b) ? (a) : (b)
 
@@ -640,6 +641,60 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
     return errno ? -1 : 0;
 }
 
+int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, size_t* size) {
+    if (!store) {
+        errno = EINVAL;
+        return -1;
+    }
+    int errnosave = 0;
+
+    int readCount = 0;
+    size_t retMaxSize = INITIALBUFSIZ, retCurrSize = 0;
+
+    char* ret = calloc(INITIALBUFSIZ, 1);
+    if (!ret) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
+    FileNode_t* currPtr = store->hPtr;
+
+    while (currPtr && readCount != upperLimit) {
+        size_t retNewSize = retCurrSize + currPtr->contentSize + strlen(currPtr->pathname) + 2 * METADATA_SIZE;
+        if (retNewSize > retMaxSize) {
+            void* tmp = realloc(ret, 2 * retNewSize);
+            if (!tmp) {
+                errnosave = ENOMEM;
+                free(ret);
+                goto cleanup;
+            }
+            ret = tmp;
+        }
+        sprintf(
+            ret + retCurrSize,
+            "%08ld%s%08ld%s",
+            strlen(currPtr->pathname), currPtr->pathname, currPtr->contentSize, currPtr->content
+        );
+        retCurrSize = retNewSize;
+
+        currPtr = currPtr->nextPtr;
+        readCount += 1;
+    }
+
+cleanup:
+    DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
+
+    *buf = ret;
+    *size = retCurrSize;
+
+    puts(ret);
+
+    errno = errnosave ? errnosave : errno;
+    return errno ? -1 : readCount;
+
+}
+
 int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* newContent, struct fdNode** notifyList, FileNode_t** evictedList, const int requestor) {
     /**
      * @brief Handles write-to-file requests from client. These can be appends on existing files or a whole new file
@@ -655,9 +710,6 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
      * `ENOENT' file not found \n
      * `EINVAL` invalid parameters
      */
-
-     // todo add parameter of list of files to hold the evicted files
-
 
     CHECK_INPUT(store, pathname, requestor);
 

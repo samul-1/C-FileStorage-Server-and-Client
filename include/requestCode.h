@@ -1,7 +1,7 @@
 #ifndef REQ_CODE_H
 #define REQ_CODE_H
 
-#define CLOSE_CONN 1
+#define READ_N_FILES 1
 #define OPEN_FILE 2
 #define READ_FILE 3
 #define WRITE_FILE 4

@@ -130,6 +130,17 @@ int main(int argc, char** argv) {
 
             closeFile(writeBuf);
         }
+        else if (!strncmp(writeBuf, "readn", 5)) {
+            // name
+            //fgets(writeBuf, MAX_MSG_LEN, stdin);
+            //writeBuf[strlen(writeBuf) - 1] = '\0';
+            int num;
+            scanf("%d", &num);
+
+            if (readNFiles(num, "downloadsReadN") == -1) {
+                perror("readnfiles");
+            }
+        }
         else if (!strncmp(writeBuf, "read", 4)) {
             // name
             fgets(writeBuf, MAX_MSG_LEN, stdin);

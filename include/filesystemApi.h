@@ -81,6 +81,7 @@ int destroyStorage(CacheStorage_t* store);
 
 int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, struct fdNode** notifyList, const int requestor);
 int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, size_t* size, const int requestor);
+int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, size_t* size);
 int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* newContent, struct fdNode** notifyList, FileNode_t** evictedList, const int requestor);
 int lockFileHandler(CacheStorage_t* store, const char* pathname, const int requestor);
 int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockFd, const int requestor);

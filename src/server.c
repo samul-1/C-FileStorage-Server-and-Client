@@ -198,7 +198,9 @@ void* _startWorker(void* args) {
         char
             requestCodeBuf[REQ_CODE_LEN + 1] = "",
             pipeBuf[PIPE_BUF_LEN] = "",
-            flagBuf[2] = "";
+            flagBuf[2] = "", // holds the flag for `openFile`
+            argBuf[METADATA_SIZE + 1] = ""; // holds the number of files to read for `readNFiles`
+
         char
             * recvLine1,
             * recvLine2,
@@ -222,8 +224,10 @@ void* _startWorker(void* args) {
             //printf("read %s - reqn %ld\n", requestCodeBuf, requestCode);
 
             // get request filepath from client
-            recvLine1 = getRequestPayloadSegment(rdy_fd);
-            printf("%s", recvLine1);
+            if (requestCode != READ_N_FILES) {
+                recvLine1 = getRequestPayloadSegment(rdy_fd);
+            }
+
             switch (requestCode) {
             case OPEN_FILE:
                 printf("open %s\n", recvLine1);
@@ -275,6 +279,20 @@ void* _startWorker(void* args) {
                     free(sendLine);
                     free(outBuf);
                 }
+                break;
+            case READ_N_FILES:
+                puts("READ N FILE");
+                DIE_ON_NEG_ONE(read(rdy_fd, argBuf, METADATA_SIZE));
+                long upperLimit;
+                if (isNumber(argBuf, &upperLimit) != 0) { // not a valid flag
+                    SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
+                }
+                char* res;
+                size_t resSize;
+                readNFilesHandler(store, upperLimit, (void**)&res, &resSize);
+                SEND_RESPONSE_CODE(rdy_fd, OK);
+                DIE_ON_NEG_ONE(write(rdy_fd, res, resSize));
+                DIE_ON_NEG_ONE(write(rdy_fd, "00000000", strlen("00000000")));
                 break;
             case WRITE_FILE:
                 puts("write");
@@ -368,7 +386,9 @@ void* _startWorker(void* args) {
             //printFile(store, recvLine1);
 
             // free the resources allocated to handle the request
-            free(recvLine1);
+            if (requestCode != READ_N_FILES) {
+                free(recvLine1);
+            }
             if (putFdBack) { // we're done handling this request - tell manager to put fd back in readset
                 //printf("putting back %d\n", rdy_fd);
                 // convert int to string
