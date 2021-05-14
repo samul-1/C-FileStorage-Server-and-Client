@@ -18,4 +18,6 @@
 
 `scerrhand.h` - macros for handling errors from system calls
 
-`misc.h` - miscellaneous utility functions
+`misc.h` - miscellaneous utility functions and macros
+
+`clientServerProtocol.h` - macros related to the communication protocol between clients and the server

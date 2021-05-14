@@ -217,8 +217,16 @@ void freeFdList(struct fdNode* h) {
 }
 // ! ---------------------------------------------------------------------------
 
+void deallocFile(FileNode_t* fptr) {
+    assert(fptr);
 
-static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** notifyList) {
+    free(fptr->pathname);
+    free(fptr->content);
+
+    free(fptr);
+}
+
+static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode** notifyList, bool deallocMem) {
     /**
      * @brief Handles eviction of a file from the storage.
      * @note Assumes the caller thread has mutual exclusion over the store. Returns memory allocated on the heap that \n
@@ -228,6 +236,8 @@ static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode**
      * @param fptr A pointer to the file to delete
      * @param notifyList A pointer to a list of file descriptors that were waiting to gain lock of this file. \n
      * *NB*: the caller needs to `free` the list at a later point
+     * @param deallocMem If `false`, the file will be removed from the storage but it won't be `free`d. This allows \n
+     * the caller to retain a pointer to the file and `free` it later. This is used for sending evicted files back to the client
      *
      */
 
@@ -285,10 +295,9 @@ static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode**
     // delete from dictionary
     assert(icl_hash_delete(store->dictStore, fptr->pathname, NULL, NULL) == 0); // must succeed
 
-    free(fptr->pathname);
-    free(fptr->content);
-
-    free(fptr);
+    if (deallocMem) {
+        deallocFile(fptr);
+    }
 }
 
 
@@ -334,7 +343,7 @@ int destroyStorage(CacheStorage_t* store) {
     while (store->hPtr) {
         tmp = store->hPtr;
         store->hPtr = store->hPtr->nextPtr;
-        destroyFile(store, tmp, NULL);
+        destroyFile(store, tmp, NULL, true);
     }
 
     // destroy data structures and mutex
@@ -505,7 +514,7 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
     if (!alreadyExists) {
         if (store->currFileNum == store->maxFileNum) {
             FileNode_t* victim = getVictim(store, NULL);
-            destroyFile(store, victim, notifyList);
+            destroyFile(store, victim, notifyList, true); // todo ask about sending file back on openFile just like on writeFile
         }
         fPtr = allocFile(pathname);
         if (!fPtr) {
@@ -631,7 +640,7 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
     return errno ? -1 : 0;
 }
 
-int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* newContent, struct fdNode** notifyList, const int requestor) {
+int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* newContent, struct fdNode** notifyList, FileNode_t** evictedList, const int requestor) {
     /**
      * @brief Handles write-to-file requests from client. These can be appends on existing files or a whole new file
      *
@@ -709,7 +718,12 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         FileNode_t* victim = getVictim(store, fptr);
         assert(victim);
         struct fdNode* tmpList = NULL; // will hold a list of fd's that were waiting on this file before it got deleted
-        destroyFile(store, victim, &tmpList);
+        destroyFile(store, victim, &tmpList, false);
+
+        // build a list of evicted files
+        victim->nextPtr = *evictedList;
+        *evictedList = victim;
+
         // make a single list with all the clients that need to be notified that a file they were blocked on doesn't exist (anymore)
         concatenateFdLists(notifyList, tmpList);
         // todo send victim back somehow and log eviction of file
@@ -1024,7 +1038,7 @@ int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode
         return -1;
     }
 
-    destroyFile(store, fptr, notifyList);
+    destroyFile(store, fptr, notifyList, true);
 
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
 

@@ -99,7 +99,7 @@ int openFile(const char* pathname, int flags) {
         errno = EINVAL;
         return -1;
     }
-    if (responseCode == 0) {
+    if (responseCode == OK) {
         PRINT_IF_ENABLED(stdout, Open, pathname, "OK\n");
     }
     else {
@@ -139,7 +139,6 @@ int readFile(const char* pathname, void** buf, size_t* size) {
         return -1;
     }
     long responseCode;
-    printf("response from server %s\n", recvLine1);
     if (isNumber(recvLine1, &responseCode) != 0) {
         PRINT_IF_ENABLED(stderr, Read, pathname, "Invalid response from server.\n");
         errno = EINVAL;
@@ -231,7 +230,7 @@ int writeFile(const char* pathname, const char* dirname) {
         errno = EINVAL;
         return -1;
     }
-    if (responseCode == 0) {
+    if (responseCode == OK) {
         PRINT_IF_ENABLED(stdout, Write, pathname, "OK");
     }
     else {
@@ -259,7 +258,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 
     free(req);
 
-    char recvLine[RES_CODE_LEN + 1];
+    char recvLine[RES_CODE_LEN + 1] = "";
     // wait for response
     if (read(SOCKET_FD, recvLine, RES_CODE_LEN) == -1) {
         return -1;
@@ -271,7 +270,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
         errno = EINVAL;
         return -1;
     }
-    if (responseCode == 0) {
+    if (responseCode == OK) {
         PRINT_IF_ENABLED(stdout, Append, pathname, "OK");
     }
     else {
@@ -279,6 +278,31 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
         ERR_CODE_TO_ERRNO(responseCode);
         return -1;
     }
+
+    char evictedBuf[100000] = "";
+    do {
+        DIE_ON_NEG_ONE(read(SOCKET_FD, evictedBuf, METADATA_SIZE));
+        //puts("first read of 8 bytes");
+        size_t filepathLen = atol(evictedBuf);
+        if (filepathLen > 0) {
+            char* recvLine2 = calloc(filepathLen + 1, 1);
+            //puts("second read of 1 byte");
+            DIE_ON_NEG_ONE(read(SOCKET_FD, recvLine2, filepathLen));
+            //puts(recvLine2);
+            printf("file path: %s\n", recvLine2);
+            //puts("third read of 8 bytes");
+            DIE_ON_NEG_ONE(read(SOCKET_FD, evictedBuf, METADATA_SIZE));
+            size_t filecontentLen = atol(evictedBuf);
+            char* recvLine3 = calloc(filecontentLen + 1, 1);
+            DIE_ON_NEG_ONE(read(SOCKET_FD, recvLine3, filecontentLen));
+            printf("file content: %s\n", recvLine3);
+            //puts("fourth read of 10 bytes");
+            //puts(recvLine3);
+        }
+        else {
+            break;
+        };
+    } while (true);
 
     // todo handle saving files sent from server
     return 0;
@@ -316,7 +340,7 @@ int lockFile(const char* pathname) {
         errno = EINVAL;
         return -1;
     }
-    if (responseCode == 0) {
+    if (responseCode == OK) {
         PRINT_IF_ENABLED(stdout, Lock, pathname, "OK");
     }
     else {
@@ -359,7 +383,7 @@ int unlockFile(const char* pathname) {
         errno = EINVAL;
         return -1;
     }
-    if (responseCode == 0) {
+    if (responseCode == OK) {
         PRINT_IF_ENABLED(stdout, Unlock, pathname, "OK");
     }
     else {
@@ -402,7 +426,7 @@ int closeFile(const char* pathname) {
         errno = EINVAL;
         return -1;
     }
-    if (responseCode == 0) {
+    if (responseCode == OK) {
         PRINT_IF_ENABLED(stdout, Close, pathname, "OK");
     }
     else {
@@ -445,7 +469,7 @@ int removeFile(const char* pathname) {
         errno = EINVAL;
         return -1;
     }
-    if (responseCode == 0) {
+    if (responseCode == OK) {
         PRINT_IF_ENABLED(stdout, Remove, pathname, "OK");
     }
     else {

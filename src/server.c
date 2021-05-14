@@ -46,6 +46,12 @@ ANSI_COLOR_CYAN "Max total storage size reached: " ANSI_COLOR_RESET "%zu\n" \
 ANSI_COLOR_CYAN "Number of files that have been evicted from the cache: " ANSI_COLOR_RESET "%zu\n" \
 ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLOR_RESET "%zu\n"
 
+#define SEND_EVICTED_FILE(fd, file) \
+snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->contentSize)+1, "%08ld%s%08ld%s", strlen(file->pathname), file->pathname, file->contentSize, file->content);\
+puts(evictedBuf);\
+printf("writing %zu bytes\n", METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize);\
+DIE_ON_NEG_ONE(write(fd, evictedBuf, (METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize)));
+
 #define SEND_RESPONSE_CODE(fd, code) \
 printf("SENDING CODE %d\n", code);\
 snprintf(codeBuf, RES_CODE_LEN + 1, "%d", code);\
@@ -199,6 +205,7 @@ void* _startWorker(void* args) {
             * sendLine;
 
         struct fdNode* notifyList = NULL;
+        FileNode_t* evictedList = NULL;
 
         // get ready fd from task queue
         DIE_ON_NEG_ONE(dequeue(taskBuf, (void*)&rdy_fd, sizeof(rdy_fd)));
@@ -284,7 +291,7 @@ void* _startWorker(void* args) {
                 puts("append");
                 // get content to write/append
                 recvLine2 = getRequestPayloadSegment(rdy_fd);
-                if (writeToFileHandler(store, recvLine1, recvLine2, &notifyList, rdy_fd) == -1) {
+                if (writeToFileHandler(store, recvLine1, recvLine2, &notifyList, &evictedList, rdy_fd) == -1) {
                     HANDLE_REQ_ERROR(rdy_fd);
                 }
                 else {
@@ -292,6 +299,18 @@ void* _startWorker(void* args) {
                     // if there were clients waiting to acquire lock on the deleted file(s),
                     // notify them that the file(s) don't exist (anymore)
                     NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
+                    char evictedBuf[10000] = "";
+                    // send evicted files to client
+                    while (evictedList) {
+                        printf("EVICTING %s\n", evictedList->pathname);
+                        FileNode_t* tmpPtr = evictedList;
+                        SEND_EVICTED_FILE(rdy_fd, evictedList);
+                        evictedList = evictedList->nextPtr;
+                        deallocFile(tmpPtr);
+                    }
+                    // tell the client there are no more evicted files to read
+                    sprintf(evictedBuf, "00000000");
+                    DIE_ON_NEG_ONE(write(rdy_fd, evictedBuf, strlen("00000000")));
                 }
                 free(recvLine2);
                 break;
@@ -346,7 +365,7 @@ void* _startWorker(void* args) {
             // puts("Store:");
             // printStore(store);
             // puts("Affected file:");
-            printFile(store, recvLine1);
+            //printFile(store, recvLine1);
 
             // free the resources allocated to handle the request
             free(recvLine1);
