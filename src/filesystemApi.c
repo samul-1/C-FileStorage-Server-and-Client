@@ -67,8 +67,9 @@ static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname,
     char timeString[9];  // space for "HH:MM:SS\0"
 
     time(&current_time);
+    //! not re-entrant: fix with localtime_r
     time_info = localtime(&current_time);
-
+    // ! investigate this too: asctime_r? is `time` re-entrant?
     strftime(timeString, sizeof(timeString), "%H:%M:%S", time_info);
 
     sprintf(
