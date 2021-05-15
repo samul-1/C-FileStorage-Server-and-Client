@@ -1,3 +1,5 @@
+#define _BSD_SOURCE
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -8,6 +10,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "../utils/misc.h"
 #include "../include/clientApi.h"
@@ -54,7 +57,7 @@ char* realpath(const char* restrict path,
 
 #define DEALLOC_AND_FAIL \
 deallocOption(cliCommandList);\
-return EXIT_FAILURE;
+return -1;
 
 #define FAIL_IF_NO_ARG(o, c) \
 if(!o->argument) { \
@@ -64,17 +67,118 @@ if(!o->argument) { \
 
 char SOCKET_PATH[MAX_SOCKETPATH_LEN];
 
+// splits the given comma-separated argument and makes an API call for each of the token arguments
+#define MULTIARG_API_WRAPPER(apiFunc, arg) \
+do {\
+    char* strtok_r_savePtr;\
+    char* currFile = strtok_r(arg, ",", &strtok_r_savePtr);\
+\
+    while (currFile) {\
+        printf("%s %s\n", #apiFunc, currFile);\
+        if (apiFunc(currFile) == -1) {\
+\
+        }\
+        currFile = strtok_r(NULL, ",", &strtok_r_savePtr);\
+    }\
+} while(0);
+
 int smallwHandler(char* arg, char* dirname) {}
 int capitalWHandler(char* arg, char* dirname) {}
 int smallrHandler(char* arg, char* dirname) {}
 int capitalRHandler(char* arg, char* dirname) {}
-int LHandler(char* arg) {}
-int UHandler(char* arg) {}
-int CHandler(char* arg) {}
+
+int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly) {
+    while (cliCommandList) {
+        bool skipNext = false;
+
+        char* dirname = NULL;
+        switch (cliCommandList->option)
+        {
+        case 'D':
+            fprintf(stderr, D_AFTER_W_MSG);
+            DEALLOC_AND_FAIL;
+        case 'd':
+            fprintf(stderr, d_AFTER_R_MSG);
+            DEALLOC_AND_FAIL;
+        case 'w':
+            FAIL_IF_NO_ARG(cliCommandList, 'w');
+            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'D') {
+                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'D');
+                dirname = cliCommandList->nextPtr->argument;
+                skipNext = true;
+            }
+            if (!validateOnly) {
+                smallwHandler(cliCommandList->argument, dirname);
+            }
+            break;
+        case 'W':
+            FAIL_IF_NO_ARG(cliCommandList, 'W');
+            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'D') {
+                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'D');
+                dirname = cliCommandList->nextPtr->argument;
+                skipNext = true;
+            }
+            if (!validateOnly) {
+                capitalWHandler(cliCommandList->argument, dirname);
+            }
+            break;
+        case 'r':
+            FAIL_IF_NO_ARG(cliCommandList, 'r');
+            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'd') {
+                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'd');
+                dirname = cliCommandList->nextPtr->argument;
+                skipNext = true;
+            }
+            if (!validateOnly) {
+                smallrHandler(cliCommandList->argument, dirname);
+            }
+            break;
+        case 'R':
+            FAIL_IF_NO_ARG(cliCommandList, 'R');
+            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'd') {
+                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'd');
+                dirname = cliCommandList->nextPtr->argument;
+                skipNext = true;
+            }
+            if (!validateOnly) {
+                capitalRHandler(cliCommandList->argument, dirname);
+            }
+            break;
+        case 'l':
+            FAIL_IF_NO_ARG(cliCommandList, 'l');
+            if (!validateOnly) {
+                MULTIARG_API_WRAPPER(lockFile, cliCommandList->argument);
+            }
+            break;
+        case 'u':
+            FAIL_IF_NO_ARG(cliCommandList, 'u');
+            if (!validateOnly) {
+                MULTIARG_API_WRAPPER(unlockFile, cliCommandList->argument);
+            }
+            break;
+        case 'c':
+            FAIL_IF_NO_ARG(cliCommandList, 'c');
+            if (!validateOnly) {
+                MULTIARG_API_WRAPPER(removeFile, cliCommandList->argument);
+            }
+            break;
+        default:
+            fprintf(stderr, UNKNOWN_ARG_MSG, cliCommandList->option);
+            return -1;
+            break;
+        }
+        cliCommandList = cliCommandList->nextPtr;
+        if (skipNext && cliCommandList) {
+            cliCommandList = cliCommandList->nextPtr;
+        }
+
+        usleep(1000 * tBetweenReqs);
+    }
+}
 
 int main(int argc, char** argv) {
     CliOption* cliCommandList = parseCli(argc, argv);
-    long timeInBetweenReqs = 0;
+    long tBetweenReqs = 0;
 
     if (!cliCommandList) {
         if (errno) {
@@ -118,7 +222,7 @@ int main(int argc, char** argv) {
     }
 
     if ((currOpt = popOption(&cliCommandList, 't'))) {
-        if (currOpt->argument && (isNumber(currOpt->argument, &timeInBetweenReqs) != 0)) {
+        if (currOpt->argument && (isNumber(currOpt->argument, &tBetweenReqs) != 0)) {
             fprintf(stderr, T_ARG_NO_NUM);
             DEALLOC_AND_FAIL;
         }
@@ -128,76 +232,12 @@ int main(int argc, char** argv) {
         }
     }
 
-
-    while (cliCommandList) {
-        bool skipNext = false;
-
-        char* dirname = NULL;
-        switch (cliCommandList->option)
-        {
-        case 'D':
-            fprintf(stderr, D_AFTER_W_MSG);
-            DEALLOC_AND_FAIL;
-        case 'd':
-            fprintf(stderr, d_AFTER_R_MSG);
-            DEALLOC_AND_FAIL;
-        case 'w':
-            FAIL_IF_NO_ARG(cliCommandList, 'w');
-            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'D') {
-                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'D');
-                dirname = cliCommandList->nextPtr->argument;
-                skipNext = true;
-            }
-            smallwHandler(cliCommandList->argument, dirname);
-            break;
-        case 'W':
-            FAIL_IF_NO_ARG(cliCommandList, 'W');
-            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'D') {
-                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'D');
-                dirname = cliCommandList->nextPtr->argument;
-                skipNext = true;
-            }
-            capitalWHandler(cliCommandList->argument, dirname);
-            break;
-        case 'r':
-            FAIL_IF_NO_ARG(cliCommandList, 'r');
-            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'd') {
-                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'd');
-                dirname = cliCommandList->nextPtr->argument;
-                skipNext = true;
-            }
-            smallrHandler(cliCommandList->argument, dirname);
-            break;
-        case 'R':
-            FAIL_IF_NO_ARG(cliCommandList, 'R');
-            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'd') {
-                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'd');
-                dirname = cliCommandList->nextPtr->argument;
-                skipNext = true;
-            }
-            capitalRHandler(cliCommandList->argument, dirname);
-            break;
-        case 'l':
-            FAIL_IF_NO_ARG(cliCommandList, 'l');
-            LHandler(cliCommandList->argument);
-            break;
-        case 'u':
-            FAIL_IF_NO_ARG(cliCommandList, 'u');
-            UHandler(cliCommandList->argument);
-            break;
-        case 'c':
-            FAIL_IF_NO_ARG(cliCommandList, 'c');
-            CHandler(cliCommandList->argument);
-            break;
-        default:
-            fprintf(stderr, UNKNOWN_ARG_MSG, cliCommandList->option);
-            return EXIT_FAILURE;
-            break;
-        }
-        cliCommandList = cliCommandList->nextPtr;
-        if (skipNext && cliCommandList) {
-            cliCommandList = cliCommandList->nextPtr;
-        }
+    // validate the commands before running any of them
+    if (runCommands(cliCommandList, 0, true) == -1) {
+        return EXIT_FAILURE;
     }
+
+    // now actually run the commands
+    runCommands(cliCommandList, tBetweenReqs, false);
 
 }
