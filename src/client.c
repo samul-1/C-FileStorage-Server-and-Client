@@ -9,7 +9,9 @@
 #include <limits.h>
 #include <errno.h>
 
-// #include "../include/clientApi.h"
+#include "../utils/misc.h"
+#include "../include/clientApi.h"
+#include "../include/cliParser.h"
 
 char* realpath(const char* restrict path,
     char* restrict resolved_path);
@@ -35,102 +37,167 @@ char* realpath(const char* restrict path,
  *
  */
 
-#define TOO_MANY_P_MSG "You can only enable prints multiple times.\n"
+#define TOO_MANY_P_MSG "You can only enable prints once.\n"
+#define TOO_MANY_T_MSG "You can only set -t once.\n"
 #define TOO_MANY_F_MSG "You can only set the socket name once.\n"
+#define d_AFTER_R_MSG "You can only use the -d option after -r or -R\n"
+#define D_AFTER_W_MSG "You can only use the -D option after -w or -W\n"
 #define ARG_REQUIRED_MSG "Option %c requires an argument.\n"
+#define NO_CMD_MSG "No commands were given.\n"
+#define T_ARG_NO_NUM "The argument of -t option must be a number.\n"
+#define NO_F_MSG "You must specify a name for the socket with -f.\n"
+#define UNKNOWN_ARG_MSG "Unknown option -%c.\n"
+#define USAGE_MSG "usage"
 
 #define MAX_SOCKETPATH_LEN 1024
 #define MAX_ARG_OPT_LEN 1024
 
-char socketName[MAX_SOCKETPATH_LEN] = { 0 };
-int socketFd;
-bool enablePrints = false;
+#define DEALLOC_AND_FAIL \
+deallocOption(cliCommandList);\
+return EXIT_FAILURE;
+
+#define FAIL_IF_NO_ARG(o, c) \
+if(!o->argument) { \
+    fprintf(stderr, ARG_REQUIRED_MSG, c);\
+    DEALLOC_AND_FAIL;\
+}
+
+char SOCKET_PATH[MAX_SOCKETPATH_LEN];
+
+int smallwHandler(char* arg, char* dirname) {}
+int capitalWHandler(char* arg, char* dirname) {}
+int smallrHandler(char* arg, char* dirname) {}
+int capitalRHandler(char* arg, char* dirname) {}
+int LHandler(char* arg) {}
+int UHandler(char* arg) {}
+int CHandler(char* arg) {}
 
 int main(int argc, char** argv) {
-    int c;
-    char lastFlag = '\0';
-    char real[MAX_SOCKETPATH_LEN];
+    CliOption* cliCommandList = parseCli(argc, argv);
+    long timeInBetweenReqs = 0;
 
-    while ((c = getopt(argc, argv, ":hf:w:W:D:r:R:d:t:l:u:c:p")) != -1) {
-        switch (c) {
-        case 'h':
-            puts("help");
-            return EXIT_SUCCESS;
-        case 'f':
-            if (strlen(socketName)) {
-                fprintf(stderr, TOO_MANY_F_MSG);
-                return EXIT_FAILURE;
-            }
-            if (realpath(optarg, real) == NULL && errno != ENOENT) {
-                perror("realpath");
-                return EXIT_FAILURE;
-            }
-            // set socket name
-            strncpy(socketName, real, MAX_SOCKETPATH_LEN);
-            // ? socketName[strlen(real)] = '\0';
-            printf("socket name is %s\n", socketName);
-            break;
+    if (!cliCommandList) {
+        if (errno) {
+            perror("Parsing CLI commands");
+        }
+        else {
+            fprintf(stderr, NO_CMD_MSG);
+        }
+        return EXIT_FAILURE;
+    }
+
+    CliOption* currOpt;
+
+    if (popOption(&cliCommandList, 'h')) {
+        fprintf(stdout, USAGE_MSG);
+        return EXIT_SUCCESS;
+    }
+
+    if (!(currOpt = popOption(&cliCommandList, 'f'))) {
+        fprintf(stderr, NO_F_MSG);
+        DEALLOC_AND_FAIL;
+    }
+    else {
+        if (!currOpt->argument) {
+            fprintf(stderr, ARG_REQUIRED_MSG, 'f');
+            DEALLOC_AND_FAIL;
+        }
+        strncpy(SOCKET_PATH, currOpt->argument, MAX_SOCKETPATH_LEN);
+        if (popOption(&cliCommandList, 'f')) { // check if there is a second -f command
+            fprintf(stderr, TOO_MANY_F_MSG);
+            DEALLOC_AND_FAIL;
+        }
+    }
+
+    if (popOption(&cliCommandList, 'p')) {
+        PRINTS_ENABLED = true;
+        if (popOption(&cliCommandList, 'p')) { // check if there is a second -p command
+            fprintf(stderr, TOO_MANY_P_MSG);
+            DEALLOC_AND_FAIL;
+        }
+    }
+
+    if ((currOpt = popOption(&cliCommandList, 't'))) {
+        if (currOpt->argument && (isNumber(currOpt->argument, &timeInBetweenReqs) != 0)) {
+            fprintf(stderr, T_ARG_NO_NUM);
+            DEALLOC_AND_FAIL;
+        }
+        if (popOption(&cliCommandList, 't')) { // check if there is a second -t command
+            fprintf(stderr, TOO_MANY_T_MSG);
+            DEALLOC_AND_FAIL;
+        }
+    }
+
+
+    while (cliCommandList) {
+        bool skipNext = false;
+
+        char* dirname = NULL;
+        switch (cliCommandList->option)
+        {
+        case 'D':
+            fprintf(stderr, D_AFTER_W_MSG);
+            DEALLOC_AND_FAIL;
+        case 'd':
+            fprintf(stderr, d_AFTER_R_MSG);
+            DEALLOC_AND_FAIL;
         case 'w':
-            printf("want to write all stuff in %s\n", optarg);
+            FAIL_IF_NO_ARG(cliCommandList, 'w');
+            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'D') {
+                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'D');
+                dirname = cliCommandList->nextPtr->argument;
+                skipNext = true;
+            }
+            smallwHandler(cliCommandList->argument, dirname);
             break;
         case 'W':
-            printf("want to write files: %s\n", optarg);
-            break;
-        case 'D':
-            if (tolower(lastFlag) != 'w') {
-                puts("D requires w/W");
-                return EXIT_FAILURE;
+            FAIL_IF_NO_ARG(cliCommandList, 'W');
+            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'D') {
+                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'D');
+                dirname = cliCommandList->nextPtr->argument;
+                skipNext = true;
             }
-            printf("set return directory for write to %s\n", optarg);
+            capitalWHandler(cliCommandList->argument, dirname);
             break;
         case 'r':
-            printf("want to read all stuff in %s\n", optarg);
+            FAIL_IF_NO_ARG(cliCommandList, 'r');
+            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'd') {
+                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'd');
+                dirname = cliCommandList->nextPtr->argument;
+                skipNext = true;
+            }
+            smallrHandler(cliCommandList->argument, dirname);
             break;
         case 'R':
-            printf("want to read %s files\n", optarg);
-            break;
-        case 'd':
-            if (tolower(lastFlag) != 'r') {
-                puts("d requires r/R");
-                return EXIT_FAILURE;
+            FAIL_IF_NO_ARG(cliCommandList, 'R');
+            if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'd') {
+                FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'd');
+                dirname = cliCommandList->nextPtr->argument;
+                skipNext = true;
             }
-            printf("set return directory for read to %s\n", optarg);
-            break;
-        case 't':
-            printf("set interval to %s\n", optarg);
+            capitalRHandler(cliCommandList->argument, dirname);
             break;
         case 'l':
-            printf("want to lock %s\n", optarg);
+            FAIL_IF_NO_ARG(cliCommandList, 'l');
+            LHandler(cliCommandList->argument);
             break;
         case 'u':
-            printf("want to unlock %s\n", optarg);
+            FAIL_IF_NO_ARG(cliCommandList, 'u');
+            UHandler(cliCommandList->argument);
             break;
         case 'c':
-            printf("want to delete %s\n", optarg);
+            FAIL_IF_NO_ARG(cliCommandList, 'c');
+            CHandler(cliCommandList->argument);
             break;
-        case 'p':
-            if (enablePrints) {
-                fprintf(stderr, TOO_MANY_P_MSG);
-                return EXIT_FAILURE;
-            }
-            enablePrints = true;
-            printf("enabled prints\n");
-            break;
-        case ':':
-            if (optopt == 'R') { // todo handle case like `-R -d` where -d becomes the arg of -R
-                puts("R with default arg");
-                break;
-            }
-            else if (optopt == 't') { // todo same as above
-                puts("t with 0 delay");
-                break;
-            }
-            else {
-                fprintf(stderr, ARG_REQUIRED_MSG, optopt);
-                return EXIT_FAILURE;
-            }
+        default:
+            fprintf(stderr, UNKNOWN_ARG_MSG, cliCommandList->option);
+            return EXIT_FAILURE;
             break;
         }
-        lastFlag = c;
+        cliCommandList = cliCommandList->nextPtr;
+        if (skipNext && cliCommandList) {
+            cliCommandList = cliCommandList->nextPtr;
+        }
     }
+
 }

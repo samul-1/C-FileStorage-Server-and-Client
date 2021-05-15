@@ -1,4 +1,4 @@
-#include "cliParser.h"
+#include "../include/cliParser.h"
 #include <errno.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -7,12 +7,6 @@
 
 #define EXPECTING_OPT 1
 #define EXPECTING_ARG 2
-
-struct cliOption {
-    char option;
-    char* argument;
-    struct cliOption* nextPtr;
-};
 
 
 void printParser(CliOption* optList) {
@@ -31,12 +25,15 @@ static void pushOpt(CliOption** optList, CliOption* option) {
     *target = option;
 }
 
-CliOption* popOption(CliOption* optList, char optName) {
-    CliOption* prevPtr = NULL, * currPtr = optList;
+CliOption* popOption(CliOption** optList, char optName) {
+    CliOption* prevPtr = NULL, * currPtr = *optList;
     while (currPtr) {
         if (currPtr->option == optName) {
             if (prevPtr) {
                 prevPtr->nextPtr = currPtr->nextPtr;
+            }
+            else {
+                *optList = currPtr->nextPtr;
             }
             return currPtr;
         }
@@ -79,11 +76,20 @@ int deallocParser(CliOption* optList) {
     while (optList) {
         tmpPtr = optList;
         optList = optList->nextPtr;
-        if (tmpPtr->argument) {
-            free(tmpPtr->argument);
-        }
-        free(tmpPtr);
+        deallocOption(tmpPtr);
     }
+    return 0;
+}
+
+int deallocOption(CliOption* optPtr) {
+    if (!optPtr) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (optPtr->argument) {
+        free(optPtr->argument);
+    }
+    free(optPtr);
     return 0;
 }
 
@@ -144,5 +150,6 @@ CliOption* parseCli(int numStrings, char** strings) {
             currState = EXPECTING_OPT;
         }
     }
+    errno = 0;
     return optList;
 }

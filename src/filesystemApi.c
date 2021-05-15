@@ -789,7 +789,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     if (tmp) {
         fptr->content = tmp;
         fptr->content[oldLen] = '\0';
-        // todo memcpy
+        // todo memcpy(fptr->content + fptr->contentSize, newContent, newContentLen)
         strncat(fptr->content, newContent, newContentLen);
         fptr->contentSize += newContentLen;
     }

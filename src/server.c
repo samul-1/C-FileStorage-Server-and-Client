@@ -537,7 +537,7 @@ int main(int argc, char** argv) {
         // wait for a fd to be ready for read operation
         if ((select(fd_num + 1, &rset, NULL, NULL, NULL)) == -1) {
             if (errno == EINTR) {
-                if (GET_CLIENT_COUNT == 0) {
+                if (softExit && GET_CLIENT_COUNT == 0) {
                     goto cleanup;
                 }
                 continue;

@@ -8,9 +8,10 @@ typedef struct cliOption {
 } CliOption;
 
 CliOption* parseCli(int numStrings, char** strings);
-CliOption* popOption(CliOption* optList, char optName);
+CliOption* popOption(CliOption** optList, char optName);
 
 int deallocParser(CliOption* list);
+int deallocOption(CliOption* optPtr);
 void printParser(CliOption* list);
 
 #endif
