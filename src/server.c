@@ -606,8 +606,9 @@ cleanup:
     for (size_t i = 0; i < workerPoolSize; i++) {
         DIE_ON_NEG_ONE(enqueue(taskBuffer, (void*)&term));
     }
+    char exitMsg[] = "EXIT";
     // send termination message to log thread
-    DIE_ON_NEG_ONE(enqueue(store->logBuffer, "EXIT"));
+    DIE_ON_NEG_ONE(enqueue(store->logBuffer, exitMsg));
 
     // wait for all threads to die
     for (size_t i = 0; i < workerPoolSize; i++) {

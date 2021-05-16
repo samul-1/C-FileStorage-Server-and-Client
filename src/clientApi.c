@@ -1,15 +1,24 @@
+#define _DEFAULT_SOURCE
+
 #include "../include/clientApi.h"
 #include "../include/requestCode.h"
 #include "../include/responseCode.h"
 #include "../utils/scerrhand.h"
 #include "../include/clientServerProtocol.h"
+#include "../include/clientInternals.h"
 #include "../utils/misc.h"
+#include <sys/socket.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/un.h>
 #include <stdio.h>
+#include <time.h>
 #include <limits.h>
+
+#define UNIX_PATH_MAX 108
 
 bool PRINTS_ENABLED = false;
 
@@ -61,62 +70,7 @@ else {\
     return -1;\
 }
 
-/* static char* constructRequest(int reqCode, char* segment1, char* segment2) {
-    size_t reqLen = INITIAL_REQ_SIZ;
-    size_t segmentLen;
-    size_t oldLen = reqLen;
-
-    char* req = calloc(reqLen, 1);
-    if (!req) {
-        errno = ENOMEM;
-        return NULL;
-    }
-    segmentLen = strlen(segment1);
-
-    reqLen = MAX(METADATA_SIZE + REQ_CODE_LEN + segmentLen + 1, reqLen);
-    if (reqLen > oldLen) {
-        void* tmp = realloc(req, METADATA_SIZE + REQ_CODE_LEN + segmentLen + 1);
-        if (!tmp) {
-            free(req);
-            errno = ENOMEM;
-            return NULL;
-        }
-        req = tmp;
-    }
-    snprintf(req, reqLen+1, "%d%08ld%s", reqCode, segmentLen, segment1);
-
-    if (segment2) {
-        segmentLen = strlen(segment2);
-    }
-}*/
-
-
-static int _mkdir(const char* dir) {
-    /**
-     * @brief Recursively creates directories
-     *
-     * @note Adapted from http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
-     *
-     */
-    char tmp[256];
-    char* p = NULL;
-    size_t len;
-    //puts(dir);
-    snprintf(tmp, sizeof(tmp), "%s", dir);
-    len = strlen(tmp);
-    if (tmp[len - 1] == '/')
-        tmp[len - 1] = 0;
-    for (p = tmp + 1; *p; p++)
-        if (*p == '/') {
-            *p = 0;
-            if (mkdir(tmp, S_IRWXU) == -1) {
-                return -1;
-            };
-            *p = '/';
-        }
-    mkdir(tmp, S_IRWXU);
-    return 0;
-}
+#define NANOSECONDS(s) ((s) * 1000 * 1000 * 1000)
 
 static int storeFiles(const char* dirname) {
     /**
@@ -154,21 +108,6 @@ static int storeFiles(const char* dirname) {
         filepathBuf[strlen(dirname)] = '/';
         // puts(filepathBuf);
 
-         // split file name from rest of path and recursively create the directories
-        char* lastSlash = strrchr(filepathBuf, '/');
-        if (lastSlash) {
-            *lastSlash = '\0';
-            // just pass the directories without the filename
-            if (_mkdir(filepathBuf) == -1) {
-                int errnosave = errno;
-                perror("mkdir");
-                free(filepathBuf);
-                errno = errnosave;
-                return -1;
-            }
-            *lastSlash = '/';
-        }
-
         // read size of content of the file
         DIE_ON_NEG_ONE(read(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
         size_t filecontentLen = atol(filemetadataBuf);
@@ -182,6 +121,22 @@ static int storeFiles(const char* dirname) {
         // todo use readn
         DIE_ON_NEG_ONE(read(SOCKET_FD, filecontentBuf, filecontentLen));
 
+
+        // split file name from rest of path and recursively create the directories
+/*         char* lastSlash = strrchr(filepathBuf, '/');
+        if (lastSlash) {
+            *lastSlash = '\0';
+            // just pass the directories without the filename
+            if (_mkdir(filepathBuf) == -1) {
+                int errnosave = errno;
+                perror("mkdir");
+                free(filepathBuf);
+                errno = errnosave;
+                return -1;
+            }
+            *lastSlash = '/';
+        }
+
         // now save file to disk
         FILE* fp = fopen(filepathBuf, "w+");
         if (fp == NULL) {
@@ -194,17 +149,61 @@ static int storeFiles(const char* dirname) {
                 return -1;
             }
         }
-        fclose(fp);
+        fclose(fp); */
 
+        if (saveFileToDisk(filepathBuf, filecontentBuf, filecontentLen) == -1) {
+            return -1;
+        }
         free(filecontentBuf);
         free(filepathBuf);
     }
     return count;
 }
 
-//int openConnection(const char* sockname, int msec, const struct timespec abstime);
 
-//int closeConnection(const char* sockname);
+int openConnection(const char* sockname, int msec, const struct timespec abstime) {
+    struct sockaddr_un sockaddr;
+    strncpy(sockaddr.sun_path, sockname, UNIX_PATH_MAX);
+    sockaddr.sun_family = AF_UNIX;
+
+    SOCKET_FD = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (SOCKET_FD == -1) {
+        return -1;
+    }
+
+    while (connect(SOCKET_FD, (struct sockaddr*)&sockaddr, sizeof sockaddr) == -1) {
+        int errnosave = errno;
+        time_t now = time(0);
+
+        if (errnosave == ENOENT) {
+            if (PRINTS_ENABLED) {
+                fprintf(stderr, "Couldn't connect to socket. Trying again in %d msec...", msec);
+            }
+        }
+        else {
+            errno = errnosave;
+            return -1;
+        }
+        if (now >= (NANOSECONDS(abstime.tv_sec) + abstime.tv_nsec)) {
+            errno = EAGAIN;
+            return -1;
+        }
+        usleep(1000 * msec);
+    }
+    return 0;
+}
+
+int closeConnection(const char* sockname) {
+    if (!pathname || !strlen(pathname)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (close(SOCKET_FD) == -1) {
+        return -1;
+    }
+
+    return 0;
+}
 
 int openFile(const char* pathname, int flags) {
     if (!pathname || !strlen(pathname)) {

@@ -1,4 +1,4 @@
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -14,6 +14,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include "../include/clientInternals.h"
 
 
 #include "../utils/misc.h"
@@ -86,6 +87,28 @@ do {\
     }\
 } while(0);
 
+int smallrHandler(char* arg, char* dirname) {
+    char* outBuf = NULL;
+    size_t fileSize = 0;
+
+    char* strtok_r_savePtr;
+
+    char* currFile = strtok_r(arg, ",", &strtok_r_savePtr);
+
+    while (currFile) {
+        printf("%s %s\n", "readfile", currFile);
+        if (readFile(currFile, (void**)&outBuf, &fileSize) == -1) {
+            ;
+        }
+        if (saveFileToDisk(currFile, outBuf, fileSize) == -1) {
+            // todo handle error
+            ;
+        }
+
+        currFile = strtok_r(NULL, ",", &strtok_r_savePtr);
+    }
+}
+
 int smallwHandler(char* arg, char* dirname) {
     long upTo = 0;
     char* strtok_r_savePtr;
@@ -97,11 +120,11 @@ int smallwHandler(char* arg, char* dirname) {
         return -1;
     }
 
-    DIR* targetDir;
-    FILE* currFileDesc;
+    DIR* targetDir = NULL; // ! warning might be uninitialized
+    //FILE* currFileDesc;
 
     struct dirent* currFile;
-    struct stat st;
+    //struct stat st;
 
     char* filePathname; // contains each file's name preceded by the directory name
     size_t fileCount = 0; // files processed so far
@@ -115,7 +138,7 @@ int smallwHandler(char* arg, char* dirname) {
         if (!strcmp(currFile->d_name, ".") || !strcmp(currFile->d_name, "..")) {
             continue;
         }
-        if ((filePathname = calloc(strlen(fromDir) + strlen(currFile->d_name) + 1), 1) == NULL) {
+        if ((filePathname = calloc(strlen(fromDir) + strlen(currFile->d_name) + 1, 1)) == NULL) {
             return -1;
         }
         strcpy(filePathname, fromDir);
@@ -137,7 +160,6 @@ int smallwHandler(char* arg, char* dirname) {
 int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly) {
     while (cliCommandList) {
         bool skipNext = false;
-        long nArg = 0;
 
         char* dirname = NULL;
         switch (cliCommandList->option)
@@ -178,11 +200,14 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
                 skipNext = true;
             }
             if (!validateOnly) {
-                MULTIARG_API_WRAPPER(readFile, cliCommandList->argument, , dirname);
+                // todo handle this in a handler because you need to save each file individually
+                //MULTIARG_API_WRAPPER(readFile, cliCommandList->argument, , dirname);
             }
             break;
         case 'R':
             FAIL_IF_NO_ARG(cliCommandList, 'R');
+            long nArg = 0;
+
             if (isNumber(cliCommandList->argument, &nArg) != 0) {
                 fprintf(stderr, ARG_NO_NUM, 'R');
                 DEALLOC_AND_FAIL;
@@ -193,7 +218,7 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
                 skipNext = true;
             }
             if (!validateOnly) {
-                MULTIARG_API_WRAPPER(readNFiles, nArg, , dirname);
+                readNFiles(nArg, dirname);
             }
             break;
         case 'l':
@@ -226,6 +251,7 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
 
         usleep(1000 * tBetweenReqs);
     }
+    return 0;
 }
 
 int main(int argc, char** argv) {
