@@ -11,6 +11,10 @@
 #include <limits.h>
 #include <errno.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
 
 #include "../utils/misc.h"
 #include "../include/clientApi.h"
@@ -47,7 +51,7 @@ char* realpath(const char* restrict path,
 #define D_AFTER_W_MSG "You can only use the -D option after -w or -W\n"
 #define ARG_REQUIRED_MSG "Option %c requires an argument.\n"
 #define NO_CMD_MSG "No commands were given.\n"
-#define T_ARG_NO_NUM "The argument of -t option must be a number.\n"
+#define ARG_NO_NUM "The argument of -%c option must be a number.\n"
 #define NO_F_MSG "You must specify a name for the socket with -f.\n"
 #define UNKNOWN_ARG_MSG "Unknown option -%c.\n"
 #define USAGE_MSG "usage"
@@ -68,28 +72,72 @@ if(!o->argument) { \
 char SOCKET_PATH[MAX_SOCKETPATH_LEN];
 
 // splits the given comma-separated argument and makes an API call for each of the token arguments
-#define MULTIARG_API_WRAPPER(apiFunc, arg) \
+#define MULTIARG_API_WRAPPER(apiFunc, arg, ...) \
 do {\
     char* strtok_r_savePtr;\
     char* currFile = strtok_r(arg, ",", &strtok_r_savePtr);\
 \
     while (currFile) {\
         printf("%s %s\n", #apiFunc, currFile);\
-        if (apiFunc(currFile) == -1) {\
+        if (apiFunc(currFile __VA_ARGS__) == -1) {\
 \
         }\
         currFile = strtok_r(NULL, ",", &strtok_r_savePtr);\
     }\
 } while(0);
 
-int smallwHandler(char* arg, char* dirname) {}
-int capitalWHandler(char* arg, char* dirname) {}
-int smallrHandler(char* arg, char* dirname) {}
-int capitalRHandler(char* arg, char* dirname) {}
+int smallwHandler(char* arg, char* dirname) {
+    long upTo = 0;
+    char* strtok_r_savePtr;
+    char* fromDir = strtok_r(arg, ",", &strtok_r_savePtr);
+
+    char* _upTo = strtok_r(NULL, ",", &strtok_r_savePtr);
+    if (isNumber(_upTo, &upTo) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    DIR* targetDir;
+    FILE* currFileDesc;
+
+    struct dirent* currFile;
+    struct stat st;
+
+    char* filePathname; // contains each file's name preceded by the directory name
+    size_t fileCount = 0; // files processed so far
+
+    errno = 0;
+    while ((currFile = readdir(targetDir)) && (!upTo || fileCount < upTo)) {
+        if (!currFile && errno) {
+            return -1;
+        }
+        // skip current and parent dirs
+        if (!strcmp(currFile->d_name, ".") || !strcmp(currFile->d_name, "..")) {
+            continue;
+        }
+        if ((filePathname = calloc(strlen(fromDir) + strlen(currFile->d_name) + 1), 1) == NULL) {
+            return -1;
+        }
+        strcpy(filePathname, fromDir);
+        strcat(filePathname, "/");
+        strcat(filePathname, currFile->d_name);
+        if (writeFile(filePathname, dirname) == -1) {
+            printf("error with writefile of %s\n", filePathname);
+        }
+        free(filePathname);
+        fileCount += 1;
+    }
+    if (closedir(targetDir) == -1) {
+        perror("closedir");
+        return -1;
+    }
+    return 0;
+}
 
 int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly) {
     while (cliCommandList) {
         bool skipNext = false;
+        long nArg = 0;
 
         char* dirname = NULL;
         switch (cliCommandList->option)
@@ -119,7 +167,7 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
                 skipNext = true;
             }
             if (!validateOnly) {
-                capitalWHandler(cliCommandList->argument, dirname);
+                MULTIARG_API_WRAPPER(writeFile, cliCommandList->argument, , dirname)
             }
             break;
         case 'r':
@@ -130,18 +178,22 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
                 skipNext = true;
             }
             if (!validateOnly) {
-                smallrHandler(cliCommandList->argument, dirname);
+                MULTIARG_API_WRAPPER(readFile, cliCommandList->argument, , dirname);
             }
             break;
         case 'R':
             FAIL_IF_NO_ARG(cliCommandList, 'R');
+            if (isNumber(cliCommandList->argument, &nArg) != 0) {
+                fprintf(stderr, ARG_NO_NUM, 'R');
+                DEALLOC_AND_FAIL;
+            }
             if (cliCommandList->nextPtr && cliCommandList->nextPtr->option == 'd') {
                 FAIL_IF_NO_ARG(cliCommandList->nextPtr, 'd');
                 dirname = cliCommandList->nextPtr->argument;
                 skipNext = true;
             }
             if (!validateOnly) {
-                capitalRHandler(cliCommandList->argument, dirname);
+                MULTIARG_API_WRAPPER(readNFiles, nArg, , dirname);
             }
             break;
         case 'l':
@@ -223,7 +275,7 @@ int main(int argc, char** argv) {
 
     if ((currOpt = popOption(&cliCommandList, 't'))) {
         if (currOpt->argument && (isNumber(currOpt->argument, &tBetweenReqs) != 0)) {
-            fprintf(stderr, T_ARG_NO_NUM);
+            fprintf(stderr, ARG_NO_NUM, 't');
             DEALLOC_AND_FAIL;
         }
         if (popOption(&cliCommandList, 't')) { // check if there is a second -t command
