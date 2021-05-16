@@ -4,7 +4,10 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#define MAX_SKT_PATH 1024
+
 int SOCKET_FD;
+char SOCKET_NAME[MAX_SKT_PATH];
 extern bool PRINTS_ENABLED;
 
 

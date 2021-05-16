@@ -13,7 +13,7 @@ SOCKETFILENAME=serversocket.sk
 # path to the log file
 LOGFILENAME=logs.json
 
-# maximum number of pending connections on the socket
+# maximum number of pending connections to the socket
 SOCKETBACKLOG=10
 
 # size of the master-worker task buffer

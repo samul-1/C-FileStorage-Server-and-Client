@@ -36,7 +36,7 @@ const char* errMessages[] = {
 };
 
 const int errnoMap[] = {
-    0, ENOENT, EACCES, E2BIG, EINVAL, EFAULT
+    0, ENOENT, EACCES, E2BIG, EINVAL, EFAULT, EEXIST
 };
 
 #define INITIAL_REQ_SIZ 1024
@@ -47,7 +47,8 @@ if(PRINTS_ENABLED) {\
 }
 
 #define PRINT_ERR_IF_ENABLED(op, filepath, errCode) \
-PRINT_IF_ENABLED(stderr, op, filepath, errMessages[errCode-1]);
+printf("errcode would be %ld\n", errCode); \
+PRINT_IF_ENABLED(stderr, op, filepath, errMessages[errCode - 1]);
 
 #define ERR_CODE_TO_ERRNO(errCode) (errno = errnoMap[errCode-1]);
 
@@ -69,8 +70,6 @@ else {\
     ERR_CODE_TO_ERRNO(responseCode);\
     return -1;\
 }
-
-#define NANOSECONDS(s) ((s) * 1000 * 1000 * 1000)
 
 static int storeFiles(const char* dirname) {
     /**
@@ -103,10 +102,12 @@ static int storeFiles(const char* dirname) {
 
         // read path of the file
         DIE_ON_NEG_ONE(read(SOCKET_FD, filepathBuf + strlen(dirname) + 1, filepathLen));
-        // prepend the argument `dirname` + /
-        strncpy(filepathBuf, dirname, strlen(dirname));
-        filepathBuf[strlen(dirname)] = '/';
-        // puts(filepathBuf);
+
+        if (dirname) {
+            // prepend the argument `dirname` + /
+            strncpy(filepathBuf, dirname, strlen(dirname));
+            filepathBuf[strlen(dirname)] = '/';
+        }
 
         // read size of content of the file
         DIE_ON_NEG_ONE(read(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
@@ -121,37 +122,7 @@ static int storeFiles(const char* dirname) {
         // todo use readn
         DIE_ON_NEG_ONE(read(SOCKET_FD, filecontentBuf, filecontentLen));
 
-
-        // split file name from rest of path and recursively create the directories
-/*         char* lastSlash = strrchr(filepathBuf, '/');
-        if (lastSlash) {
-            *lastSlash = '\0';
-            // just pass the directories without the filename
-            if (_mkdir(filepathBuf) == -1) {
-                int errnosave = errno;
-                perror("mkdir");
-                free(filepathBuf);
-                errno = errnosave;
-                return -1;
-            }
-            *lastSlash = '/';
-        }
-
-        // now save file to disk
-        FILE* fp = fopen(filepathBuf, "w+");
-        if (fp == NULL) {
-            return -1;
-        }
-        if (fwrite(filecontentBuf, 1, filecontentLen, fp) <= 0) {
-            int errnosave = errno;
-            if (ferror(fp)) {
-                errno = errnosave;
-                return -1;
-            }
-        }
-        fclose(fp); */
-
-        if (saveFileToDisk(filepathBuf, filecontentBuf, filecontentLen) == -1) {
+        if (dirname && saveFileToDisk(filepathBuf, filecontentBuf, filecontentLen) == -1) {
             return -1;
         }
         free(filecontentBuf);
@@ -177,24 +148,25 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 
         if (errnosave == ENOENT) {
             if (PRINTS_ENABLED) {
-                fprintf(stderr, "Couldn't connect to socket. Trying again in %d msec...", msec);
+                fprintf(stderr, "Couldn't connect to socket. Trying again in %d msec...\n", msec);
             }
         }
         else {
             errno = errnosave;
             return -1;
         }
-        if (now >= (NANOSECONDS(abstime.tv_sec) + abstime.tv_nsec)) {
+        if (now >= (abstime.tv_sec)) {
             errno = EAGAIN;
             return -1;
         }
         usleep(1000 * msec);
     }
+    strncpy(SOCKET_NAME, sockname, MAX_SKT_PATH);
     return 0;
 }
 
 int closeConnection(const char* sockname) {
-    if (!sockname || !strlen(sockname)) {
+    if (!sockname || strncmp(sockname, SOCKET_NAME, MAX_SKT_PATH)) {
         errno = EINVAL;
         return -1;
     }
@@ -341,6 +313,7 @@ int writeFile(const char* pathname, const char* dirname) {
         int errnosave = errno;
         if (ferror(fp)) {
             fclose(fp);
+            free(filecontentBuf);
             errno = errnosave;
             return -1;
         }
@@ -351,7 +324,9 @@ int writeFile(const char* pathname, const char* dirname) {
     size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + filecontentLen + 1;
     char* req = calloc(reqLen, 1);
     if (!req) {
-        errno = ENOMEM;
+        int errnosave = errno;
+        free(filecontentBuf);
+        errno = errnosave;
         return -1;
     }
 
@@ -359,16 +334,21 @@ int writeFile(const char* pathname, const char* dirname) {
     // construct request message
     snprintf(req, reqLen + 1, "%d%08ld%s%08ld%s", WRITE_FILE, pathnameLen, pathname, filecontentLen, filecontentBuf);
     if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+        int errnosave = errno;
+        free(req);
+        free(filecontentBuf);
+        errno = errnosave;
         return -1;
     }
 
     free(req);
+    free(filecontentBuf);
 
     char recvLine[RES_CODE_LEN + 1] = "";
 
     WAIT_FOR_RESPONSE(recvLine, Write, pathname);
 
-    if (dirname && storeFiles(dirname) == -1) {
+    if (storeFiles(dirname) == -1) {
         return -1;
     }
     return 0;
@@ -399,7 +379,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 
     WAIT_FOR_RESPONSE(recvLine, Append, pathname);
 
-    if (dirname && storeFiles(dirname) == -1) {
+    if (storeFiles(dirname) == -1) {
         return -1;
     }
     return 0;
@@ -491,7 +471,7 @@ int closeFile(const char* pathname) {
 
     free(req);
 
-    char recvLine[RES_CODE_LEN + 1];
+    char recvLine[RES_CODE_LEN + 1] = "";
     WAIT_FOR_RESPONSE(recvLine, Close, pathname);
 
     return 0;

@@ -14,8 +14,9 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 #include "../include/clientInternals.h"
-
+#include "../utils/flags.h"
 
 #include "../utils/misc.h"
 #include "../include/clientApi.h"
@@ -60,6 +61,9 @@ char* realpath(const char* restrict path,
 #define MAX_SOCKETPATH_LEN 1024
 #define MAX_ARG_OPT_LEN 1024
 
+#define RETRY_AFTER_MSEC 1000
+#define GIVE_UP_AFTER_SEC 10
+
 #define DEALLOC_AND_FAIL \
 deallocOption(cliCommandList);\
 return -1;
@@ -70,8 +74,7 @@ if(!o->argument) { \
     DEALLOC_AND_FAIL;\
 }
 
-char SOCKET_PATH[MAX_SOCKETPATH_LEN];
-
+;
 // splits the given comma-separated argument and makes an API call for each of the token arguments
 #define MULTIARG_API_WRAPPER(apiFunc, arg, ...) \
 do {\
@@ -81,33 +84,65 @@ do {\
     while (currFile) {\
         printf("%s %s\n", #apiFunc, currFile);\
         if (apiFunc(currFile __VA_ARGS__) == -1) {\
+            perror(#apiFunc);\
+        }\
+            currFile = strtok_r(NULL, ",", &strtok_r_savePtr);\
+    }\
+} while (0);
+
+#define MULTIARG_API_TRANSACTION_WRAPPER(apiFunc, arg, dirname, openFlags) \
+do {\
+    char* strtok_r_savePtr;\
+    char* currFile = strtok_r(arg, ",", &strtok_r_savePtr);\
 \
+    while (currFile) {\
+        if(openFile(currFile, openFlags) == -1) {\
+            perror("openfile");\
+        }\
+        else if (apiFunc(currFile, dirname) == -1) {\
+            perror(#apiFunc);\
+        }\
+        else if(closeFile(currFile) == -1) {\
+            perror("closefile");\
         }\
         currFile = strtok_r(NULL, ",", &strtok_r_savePtr);\
     }\
 } while(0);
 
 int smallrHandler(char* arg, char* dirname) {
-    char* outBuf = NULL;
-    size_t fileSize = 0;
-
     char* strtok_r_savePtr;
-
     char* currFile = strtok_r(arg, ",", &strtok_r_savePtr);
 
     while (currFile) {
-        printf("%s %s\n", "readfile", currFile);
-        // todo you actually need to open the files too
+        char* outBuf = NULL;
+        size_t fileSize = 0;
+        //printf("%s %s\n", "readfile", currFile);
+        if (openFile(currFile, 0) == -1) {
+            perror("open to read");
+            continue;
+        }
+        // build `dirname/pathOfFile`
+        char* filepathBuf = calloc(strlen(dirname) + strlen(currFile) + 2, 1);
+        if (!filepathBuf) {
+            return -1;
+        }
         if (readFile(currFile, (void**)&outBuf, &fileSize) == -1) {
-            ;
+            perror("readfile");
         }
-        if (saveFileToDisk(currFile, outBuf, fileSize) == -1) {
-            // todo handle error
-            ;
-        }
-        // todo you actually need to close too
+        strncpy(filepathBuf, dirname, strlen(dirname));
+        filepathBuf[strlen(dirname)] = '/';
+        strncpy(filepathBuf + strlen(dirname) + 1, currFile, strlen(currFile));
 
+        if (saveFileToDisk(filepathBuf, outBuf, fileSize) == -1) {
+            // todo handle error
+            perror("savetodisk");
+        }
+        if (closeFile(currFile) == -1) {
+            perror("close after saving");
+        }
         currFile = strtok_r(NULL, ",", &strtok_r_savePtr);
+        free(outBuf);
+        free(filepathBuf);
     }
     return 0;
 }
@@ -131,7 +166,13 @@ int smallwHandler(char* arg, char* dirname) {
 
     char* filePathname; // contains each file's name preceded by the directory name
     size_t fileCount = 0; // files processed so far
-
+    printf("from dir %s up to %s\n", fromDir, _upTo);
+    fflush(NULL);
+    if ((targetDir = opendir(fromDir)) == NULL) {
+        return -1;
+    }
+    printf("opened dir\n");
+    fflush(NULL);
     errno = 0;
     while ((currFile = readdir(targetDir)) && (!upTo || fileCount < upTo)) {
         if (!currFile && errno) {
@@ -141,17 +182,22 @@ int smallwHandler(char* arg, char* dirname) {
         if (!strcmp(currFile->d_name, ".") || !strcmp(currFile->d_name, "..")) {
             continue;
         }
-        if ((filePathname = calloc(strlen(fromDir) + strlen(currFile->d_name) + 1, 1)) == NULL) {
+        if ((filePathname = calloc(strlen(fromDir) + strlen(currFile->d_name) + 2, 1)) == NULL) {
             return -1;
         }
         strcpy(filePathname, fromDir);
         strcat(filePathname, "/");
         strcat(filePathname, currFile->d_name);
-        // todo you actually need to open the files too
+        printf("filepathname %s\n", filePathname);
+        if (openFile(filePathname, O_CREATE | O_LOCK) == -1) {
+            // todo handle error
+        }
         if (writeFile(filePathname, dirname) == -1) {
             printf("error with writefile of %s\n", filePathname);
         }
-        // todo you actually need to close the files too
+        if (closeFile(filePathname) == -1) {
+            // todo handle error
+        }
         free(filePathname);
         fileCount += 1;
     }
@@ -195,7 +241,8 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
             }
             if (!validateOnly) {
                 // todo you actually need to open the files too
-                MULTIARG_API_WRAPPER(writeFile, cliCommandList->argument, , dirname)
+                //MULTIARG_API_WRAPPER(writeFile, cliCommandList->argument, , dirname)
+                MULTIARG_API_TRANSACTION_WRAPPER(writeFile, cliCommandList->argument, dirname, (O_CREATE | O_LOCK));
             }
             break;
         case 'r':
@@ -276,7 +323,10 @@ int main(int argc, char** argv) {
     }
 
     CliOption* currOpt;
+    char sockname[MAX_SKT_PATH] = "";
 
+    //!
+    // todo free popped options
     if (popOption(&cliCommandList, 'h')) {
         fprintf(stdout, USAGE_MSG);
         return EXIT_SUCCESS;
@@ -291,7 +341,7 @@ int main(int argc, char** argv) {
             fprintf(stderr, ARG_REQUIRED_MSG, 'f');
             DEALLOC_AND_FAIL;
         }
-        strncpy(SOCKET_PATH, currOpt->argument, MAX_SOCKETPATH_LEN);
+        strncpy(sockname, currOpt->argument, MAX_SOCKETPATH_LEN);
         if (popOption(&cliCommandList, 'f')) { // check if there is a second -f command
             fprintf(stderr, TOO_MANY_F_MSG);
             DEALLOC_AND_FAIL;
@@ -322,7 +372,21 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
+    time_t now = time(0);
+    int msec = RETRY_AFTER_MSEC;
+    struct timespec abstime = { .tv_nsec = 0, .tv_sec = now + GIVE_UP_AFTER_SEC };
+
+    if (openConnection(sockname, msec, abstime) == -1) {
+        perror("open connection");
+        return EXIT_FAILURE;
+    }
     // now actually run the commands
     runCommands(cliCommandList, tBetweenReqs, false);
 
+    if (closeConnection(sockname) == -1) {
+        perror("close connection");
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
 }

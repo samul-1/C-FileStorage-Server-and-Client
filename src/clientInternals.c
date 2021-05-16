@@ -16,6 +16,7 @@ static int _mkdir(const char* dir) {
      * @note Adapted from http://nion.modprobe.de/blog/archives/357-Recursive-directory-creation.html
      *
      */
+     //printf("about to create path %s\n", dir);
     char tmp[256];
     char* p = NULL;
     size_t len;
@@ -28,11 +29,14 @@ static int _mkdir(const char* dir) {
         if (*p == '/') {
             *p = 0;
             if (mkdir(tmp, S_IRWXU) == -1) {
+                if (errno == EEXIST) {
+                    continue;
+                }
                 return -1;
             };
             *p = '/';
         }
-    if (mkdir(tmp, S_IRWXU) == -1) {
+    if (mkdir(tmp, S_IRWXU) == -1 && errno != EEXIST) {
         return -1;
     }
     return 0;

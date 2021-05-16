@@ -234,6 +234,7 @@ void* _startWorker(void* args) {
                 DIE_ON_NEG_ONE(read(rdy_fd, flagBuf, 1));
                 long flags;
                 if (isNumber(flagBuf, &flags) != 0) { // not a valid flag
+                    puts("BAD FLAG");
                     SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
                 }
                 else {
