@@ -1,0 +1,26 @@
+# max storage capacity *in bytes*
+MAXSTORAGECAP=100
+
+# max number of files
+MAXFILECOUNT=10
+
+# number of worker threads
+WORKERPOOLSIZE=5
+
+# path to the socket file
+SOCKETFILENAME=serversocket.sk
+
+# path to the log file
+LOGFILENAME=logs.json
+
+# maximum number of pending connections on the socket
+SOCKETBACKLOG=10
+
+# size of the master-worker task buffer
+TASKBUFSIZE=2048
+
+# size of the log buffer
+LOGBUFFERSIZE=2048
+
+# algorithm to choose victim files in the storage: 0 = FIFO, 1 = LRU, 2 = LFU
+REPLACEMENTALGO=0

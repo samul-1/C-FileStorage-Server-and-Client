@@ -11,12 +11,12 @@ void* logFlusher(void* args) {
     CacheStorage_t* store = tArgs->store;
     FILE* logFile;
     DIE_ON_NULL((logFile = fopen(tArgs->pathname, "w")));
-    char buf[EVENT_SLOT_SIZE];
+    char buf[EVENT_SLOT_SIZE + 1] = "";
     snprintf(buf, 3, "[\n");
     fputs(buf, logFile);
     while (true) {
         dequeue(store->logBuffer, buf, EVENT_SLOT_SIZE);
-        if (!strncmp(buf, "EXIT", 5)) { // termination message
+        if (!strncmp(buf, "EXIT", 4)) { // termination message
             break;
         }
         fputs(buf, logFile);

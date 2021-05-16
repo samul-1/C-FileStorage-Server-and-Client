@@ -42,13 +42,16 @@ static int parse(Parser* p, FILE* fp) {
     struct _pair* kvPair;
     size_t i = 0;
     while (i++, fgets(buf, BUFSIZ, fp)) {
+        // skip blank lines and comments
+        if (buf[0] == '\n' || buf[0] == '#') {
+            continue;
+        }
+
         char* savePtr, * token;
         kvPair = calloc(sizeof(*kvPair), 1);
         if (!kvPair) {
             return -3; // out of memory
         }
-
-        // todo check if a line begins with '#' for comments or is an empty line
 
         // get key
         token = strtok_r(buf, p->delim, &savePtr);

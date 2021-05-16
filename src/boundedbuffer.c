@@ -36,13 +36,14 @@ struct _boundedBuffer {
 };
 
 
-static struct _node* _allocNode(void* data, size_t dataSize) {
+static struct _node* _allocNode(void* data, size_t dataSize, size_t upTo) {
     /**
     * @brief Allocates a new node for the bounded buffer, initializing its value to
     * the given one, and returns it.
     *
     * @param data A pointer to the data the new node is going to have
     * @param dataSize The size of the data
+    * @param upTo If > 0, up to `upTo` bytes of data will be copied into the new node
     *
     * @return A pointer to the new node
     * @return NULL if the node could not be allocated.
@@ -60,7 +61,7 @@ static struct _node* _allocNode(void* data, size_t dataSize) {
     }
 
     // copy data into new node
-    memcpy(newNode->data, data, dataSize);
+    memcpy(newNode->data, data, (upTo ? upTo : dataSize));
 
     newNode->nextPtr = NULL;
 
@@ -198,13 +199,14 @@ int destroyBoundedBuffer(BoundedBuffer* buf) {
     return 0;
 }
 
-int enqueue(BoundedBuffer* buf, void* data) {
+int enqueue(BoundedBuffer* buf, void* data, size_t upTo) {
     /**
     * @brief Allocates a new node with the given value and pushes it to the tail
     * of the bounded buffer. If the buffer is full, waits until there is at least one free spot.
     *
     * @param buf is the buffer the data is going to be pushed to
     * @param data is a pointer to the data to be pushed
+    * @param upTo If > 0, up to `upTo` bytes of data will be copied into the new node
     *
     * @return 0 on success, -1 on error (sets `errno`)
     *
@@ -220,7 +222,7 @@ int enqueue(BoundedBuffer* buf, void* data) {
     }
 
     // allocate new node outside of critical section to keep it as short as possible
-    struct _node* newNode = _allocNode(data, buf->dataSize);
+    struct _node* newNode = _allocNode(data, buf->dataSize, upTo);
 
     if (!newNode) { // malloc failed; return -1 to caller
         errno = ENOMEM;

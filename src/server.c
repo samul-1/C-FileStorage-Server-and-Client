@@ -77,17 +77,17 @@ case EINVAL:\
 }
 
 #define GET_LONGVAL_OR_EXIT(p, k, v, d, failcond)\
-    if((v = getLongValueFor(p, k, d)) == -1) {\
-    perror("Error getting value for " #k);\
-    if(p) {\
-        destroyParser(p);\
-    }\
-    if(v failcond) {\
-        fprintf(stderr, "Invalid value for config parameter " #k "; using default.");\
+do {\
+    errno = 0;\
+    if(((v = getLongValueFor(p, k, d)) == -1) && errno != 0) {\
+        fprintf(stderr, "Error getting value for " #k "; using default.\n");\
         v = d;\
     }\
-    exit(EXIT_FAILURE);\
-    }
+    if(v failcond) {\
+        fprintf(stderr, "Invalid value for config parameter " #k "; using default.\n");\
+        v = d;\
+    }\
+} while(0);
 
 #define GET_VAL_OR_EXIT(p, k, b, d)\
     if(getValueFor(p, k, b, d) == -1) {\
@@ -417,9 +417,13 @@ int main(int argc, char** argv) {
     /*
     Starts a server with a pool of `poolSize` worker threads
     */
+    if (argc != 2) {
+        fprintf(stderr, "Usage: ./server pathToConfigFile\n");
+        return EXIT_FAILURE;
+    }
     puts("starting server");
     Parser* configParser;
-    DIE_ON_NULL((configParser = parseFile("config.txt", "=")));
+    DIE_ON_NULL((configParser = parseFile(argv[1], "=")));
 
     if (parserTestErr(configParser)) {
         fprintf(stderr, "Error parsing the config file: ");
@@ -428,7 +432,7 @@ int main(int argc, char** argv) {
     }
 
 
-    size_t
+    ssize_t
         maxStorageCap,
         maxFileCount,
         workerPoolSize,
@@ -447,7 +451,7 @@ int main(int argc, char** argv) {
     GET_LONGVAL_OR_EXIT(configParser, "SOCKETBACKLOG", socketBacklog, DFL_SOCKETBACKLOG, <= 0);
     GET_LONGVAL_OR_EXIT(configParser, "TASKBUFSIZE", taskBufSize, DFL_TASKBUFSIZE, <= 1);
     GET_LONGVAL_OR_EXIT(configParser, "LOGBUFSIZE", logBufSize, DFL_LOGBUFSIZE, <= 1);
-    GET_LONGVAL_OR_EXIT(configParser, "REPLACEMENTALGO", replacementAlgo, DFL_REPLACEMENTALGO, <= FIFO_ALGO);
+    GET_LONGVAL_OR_EXIT(configParser, "REPLACEMENTALGO", replacementAlgo, DFL_REPLACEMENTALGO, < FIFO_ALGO);
     GET_VAL_OR_EXIT(configParser, "SOCKETFILENAME", sockname, DFL_SOCKNAME);
     GET_VAL_OR_EXIT(configParser, "LOGFILENAME", logfilename, DFL_LOGFILENAME);
 
@@ -538,7 +542,8 @@ int main(int argc, char** argv) {
         if ((select(fd_num + 1, &rset, NULL, NULL, NULL)) == -1) {
             if (errno == EINTR) {
                 if (softExit && GET_CLIENT_COUNT == 0) {
-                    goto cleanup;
+                    //goto cleanup;
+                    break;
                 }
                 continue;
             }
@@ -592,7 +597,7 @@ int main(int argc, char** argv) {
                         fd_num--;
                     }
                     // push ready file descriptor to task queue for workers
-                    DIE_ON_NEG_ONE(enqueue(taskBuffer, fd));
+                    DIE_ON_NEG_ONE(enqueue(taskBuffer, fd, 0));
                 }
             }
         }
@@ -604,11 +609,10 @@ cleanup:
     // send termination message(s) to workers
     int term = 0;
     for (size_t i = 0; i < workerPoolSize; i++) {
-        DIE_ON_NEG_ONE(enqueue(taskBuffer, (void*)&term));
+        DIE_ON_NEG_ONE(enqueue(taskBuffer, (void*)&term, 0));
     }
-    char exitMsg[] = "EXIT";
     // send termination message to log thread
-    DIE_ON_NEG_ONE(enqueue(store->logBuffer, exitMsg));
+    DIE_ON_NEG_ONE(enqueue(store->logBuffer, "EXIT", strlen("EXIT")));
 
     // wait for all threads to die
     for (size_t i = 0; i < workerPoolSize; i++) {

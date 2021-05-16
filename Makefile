@@ -21,8 +21,6 @@ HEADDIR = include
 # Libraries
 LIBS = -lpthread -lm
 
-HEADERS =
-
 .PHONY: all clean
 
 all:	$(BIN)

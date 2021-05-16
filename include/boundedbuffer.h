@@ -21,6 +21,6 @@ If the buffer is full, waits until there is at least one free spot.
 @return 0 on success, -1 if it is unable to allocate memory for the new node.
 */
 
-int enqueue(BoundedBuffer* buf, void* data);
+int enqueue(BoundedBuffer* buf, void* data, size_t upTo);
 
 #endif

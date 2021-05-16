@@ -88,7 +88,7 @@ static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname,
     else {
         sprintf(eventBuf + strlen(eventBuf), "\n\t\t\"outcome\": \"client put on wait (code % d)\"\n\t},\n", outcome);
     }
-    return enqueue(buffer, eventBuf);
+    return enqueue(buffer, eventBuf, strlen(eventBuf) + 1);
 }
 
 // ! --------------------------------------------------------------------------

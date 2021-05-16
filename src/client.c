@@ -97,6 +97,7 @@ int smallrHandler(char* arg, char* dirname) {
 
     while (currFile) {
         printf("%s %s\n", "readfile", currFile);
+        // todo you actually need to open the files too
         if (readFile(currFile, (void**)&outBuf, &fileSize) == -1) {
             ;
         }
@@ -104,9 +105,11 @@ int smallrHandler(char* arg, char* dirname) {
             // todo handle error
             ;
         }
+        // todo you actually need to close too
 
         currFile = strtok_r(NULL, ",", &strtok_r_savePtr);
     }
+    return 0;
 }
 
 int smallwHandler(char* arg, char* dirname) {
@@ -144,9 +147,11 @@ int smallwHandler(char* arg, char* dirname) {
         strcpy(filePathname, fromDir);
         strcat(filePathname, "/");
         strcat(filePathname, currFile->d_name);
+        // todo you actually need to open the files too
         if (writeFile(filePathname, dirname) == -1) {
             printf("error with writefile of %s\n", filePathname);
         }
+        // todo you actually need to close the files too
         free(filePathname);
         fileCount += 1;
     }
@@ -189,6 +194,7 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
                 skipNext = true;
             }
             if (!validateOnly) {
+                // todo you actually need to open the files too
                 MULTIARG_API_WRAPPER(writeFile, cliCommandList->argument, , dirname)
             }
             break;
@@ -202,6 +208,7 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
             if (!validateOnly) {
                 // todo handle this in a handler because you need to save each file individually
                 //MULTIARG_API_WRAPPER(readFile, cliCommandList->argument, , dirname);
+                smallrHandler(cliCommandList->argument, dirname);
             }
             break;
         case 'R':
