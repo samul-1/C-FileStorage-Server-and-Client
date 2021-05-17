@@ -50,7 +50,7 @@ ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLO
 snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->contentSize)+1, "%08ld%s%08ld%s", strlen(file->pathname), file->pathname, file->contentSize, file->content);\
 puts(evictedBuf);\
 printf("writing %zu bytes\n", METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize);\
-DIE_ON_NEG_ONE(write(fd, evictedBuf, (METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize)));
+DIE_ON_NEG_ONE(writen(fd, evictedBuf, (METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize)));
 
 #define SEND_RESPONSE_CODE(fd, code) \
 printf("SENDING CODE %d\n", code);\
@@ -110,6 +110,9 @@ while (notifyList) {\
     free(tmpPtr);\
 }
 
+#define NO_MORE_CONTENT "00000000"
+#define CLIENT_LEFT_MSG "0000"
+
 char* getRequestPayloadSegment(int fd) {
     /**
      * @brief Takes in an fd that has written a segment of a request payload, reads the payload, and returns it.
@@ -127,13 +130,12 @@ char* getRequestPayloadSegment(int fd) {
         metadataBuf[METADATA_SIZE + 1] = "",
         * recvBuf;
 
-    // todo use readn
-    DIE_ON_NEG_ONE(read(fd, metadataBuf, METADATA_SIZE)); // todo better error handling
-    size_t filenameLen = atol(metadataBuf); // todo err handling
+    DIE_ON_NEG_ONE(readn(fd, metadataBuf, METADATA_SIZE)); // todo better error handling
+    size_t filenameLen = atol(metadataBuf);
 
     // now we have enough memory to store the filename
     DIE_ON_NULL((recvBuf = calloc(filenameLen + 1, 1)));
-    DIE_ON_NEG_ONE(read(fd, recvBuf, filenameLen));
+    DIE_ON_NEG_ONE(readn(fd, recvBuf, filenameLen));
 
     return recvBuf;
 }
@@ -274,7 +276,7 @@ void* _startWorker(void* args) {
                     snprintf(sendLine, METADATA_SIZE + 1, "%08ld", readSize);
                     // we're not putting the "+ 1" after `METADATA_SIZE` because we want to overwrite the '\0' by `snprintf`
                     memcpy(sendLine + METADATA_SIZE, outBuf, readSize);
-                    DIE_ON_NEG_ONE(write(rdy_fd, sendLine, METADATA_SIZE + readSize));
+                    DIE_ON_NEG_ONE(writen(rdy_fd, sendLine, METADATA_SIZE + readSize));
 
                     free(sendLine);
                     free(outBuf);
@@ -291,8 +293,8 @@ void* _startWorker(void* args) {
                 size_t resSize;
                 readNFilesHandler(store, upperLimit, (void**)&res, &resSize);
                 SEND_RESPONSE_CODE(rdy_fd, OK);
-                DIE_ON_NEG_ONE(write(rdy_fd, res, resSize));
-                DIE_ON_NEG_ONE(write(rdy_fd, "00000000", strlen("00000000")));
+                DIE_ON_NEG_ONE(writen(rdy_fd, res, resSize));
+                DIE_ON_NEG_ONE(writen(rdy_fd, NO_MORE_CONTENT, strlen(NO_MORE_CONTENT)));
                 break;
             case WRITE_FILE:
                 puts("write");
@@ -327,8 +329,8 @@ void* _startWorker(void* args) {
                         deallocFile(tmpPtr);
                     }
                     // tell the client there are no more evicted files to read
-                    sprintf(evictedBuf, "00000000");
-                    DIE_ON_NEG_ONE(write(rdy_fd, evictedBuf, strlen("00000000")));
+                    sprintf(evictedBuf, NO_MORE_CONTENT);
+                    DIE_ON_NEG_ONE(writen(rdy_fd, evictedBuf, strlen(NO_MORE_CONTENT)));
                 }
                 free(recvLine2);
                 break;
@@ -406,7 +408,7 @@ void* _startWorker(void* args) {
             NOTIFY_PENDING_CLIENTS(notifyList, OK, pipeBuf, pipeOut);
 
             updateClientCount(-1);
-            DIE_ON_NEG_ONE(write(pipeOut, "0000", PIPE_BUF_LEN)); // when the manager reads "0", he'll know a client left
+            DIE_ON_NEG_ONE(write(pipeOut, CLIENT_LEFT_MSG, PIPE_BUF_LEN)); // when the manager reads "0", he'll know a client left
         }
     }
     return NULL;

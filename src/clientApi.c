@@ -77,7 +77,7 @@ static int storeFiles(const char* dirname) {
     int count = 0;
     while (true) {
         // read length of filepath
-        DIE_ON_NEG_ONE(read(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
+        DIE_ON_NEG_ONE(readn(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
         size_t filepathLen = atol(filemetadataBuf);
 
         if (filepathLen == 0) {
@@ -95,7 +95,7 @@ static int storeFiles(const char* dirname) {
 
 
         // read path of the file
-        DIE_ON_NEG_ONE(read(SOCKET_FD, filepathBuf + strlen(dirname) + 1, filepathLen));
+        DIE_ON_NEG_ONE(readn(SOCKET_FD, filepathBuf + strlen(dirname) + 1, filepathLen));
 
         if (dirname) {
             // prepend the argument `dirname` + /
@@ -104,7 +104,7 @@ static int storeFiles(const char* dirname) {
         }
 
         // read size of content of the file
-        DIE_ON_NEG_ONE(read(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
+        DIE_ON_NEG_ONE(readn(SOCKET_FD, filemetadataBuf, METADATA_SIZE));
         size_t filecontentLen = atol(filemetadataBuf);
         char* filecontentBuf = calloc(filecontentLen + 1, 1);
         if (!filecontentBuf) {
@@ -113,8 +113,7 @@ static int storeFiles(const char* dirname) {
             return -1;
         }
         // read content of the file
-        // todo use readn
-        DIE_ON_NEG_ONE(read(SOCKET_FD, filecontentBuf, filecontentLen));
+        DIE_ON_NEG_ONE(readn(SOCKET_FD, filecontentBuf, filecontentLen));
 
         if (dirname && saveFileToDisk(filepathBuf, filecontentBuf, filecontentLen) == -1) {
             return -1;
@@ -185,8 +184,7 @@ int openFile(const char* pathname, int flags) {
     }
     // construct request message
     snprintf(req, reqLen, "%d%08ld%s%d", OPEN_FILE, pathnameLen, pathname, flags);
-    // todo use writen
-    if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+    if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
     free(req);
@@ -203,7 +201,7 @@ int readNFiles(int N, const char* dirname) {
     // construct request message
     snprintf(req, METADATA_SIZE + REQ_CODE_LEN + 1, "%d%08d", READ_N_FILES, N);
 
-    if (write(SOCKET_FD, req, METADATA_SIZE + REQ_CODE_LEN) == -1) {
+    if (writen(SOCKET_FD, req, METADATA_SIZE + REQ_CODE_LEN) == -1) {
         return -1;
     }
 
@@ -242,8 +240,7 @@ int readFile(const char* pathname, void** buf, size_t* size) {
     // construct request message
     snprintf(req, reqLen + 1, "%d%08ld%s", READ_FILE, pathnameLen, pathname);
 
-    // todo use writen
-    if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+    if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
     free(req);
@@ -256,7 +253,7 @@ int readFile(const char* pathname, void** buf, size_t* size) {
     WAIT_FOR_RESPONSE(recvLine1, Read, pathname);
 
     // read size of file content
-    if (read(SOCKET_FD, recvLine2, METADATA_SIZE) == -1) {
+    if (readn(SOCKET_FD, recvLine2, METADATA_SIZE) == -1) {
         return -1;
     }
     long responseSize;
@@ -270,8 +267,7 @@ int readFile(const char* pathname, void** buf, size_t* size) {
     if (!recvLine3) {
         return -1;
     }
-    // todo use readn
-    if (read(SOCKET_FD, recvLine3, responseSize) == -1) { // read the actual content of the file
+    if (readn(SOCKET_FD, recvLine3, responseSize) == -1) { // read the actual content of the file
         return -1;
     }
 
@@ -332,7 +328,7 @@ int writeFile(const char* pathname, const char* dirname) {
     // todo change this to handle binary data
     // construct request message
     snprintf(req, reqLen + 1, "%d%08ld%s%08ld%s", WRITE_FILE, pathnameLen, pathname, filecontentLen, filecontentBuf);
-    if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+    if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         int errnosave = errno;
         free(req);
         free(filecontentBuf);
@@ -371,7 +367,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     }
     snprintf(req, reqLen + 1, "%d%08ld%s%08ld%s", APPEND_TO_FILE, pathnameLen, pathname, size, (char*)buf);
 
-    if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+    if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
 
@@ -407,8 +403,7 @@ int lockFile(const char* pathname) {
     // construct request message
     snprintf(req, reqLen + 1, "%d%08ld%s", LOCK_FILE, pathnameLen, pathname);
 
-    // todo use writen
-    if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+    if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
 
@@ -438,8 +433,7 @@ int unlockFile(const char* pathname) {
     // construct request message
     snprintf(req, reqLen + 1, "%d%08ld%s", UNLOCK_FILE, pathnameLen, pathname);
 
-    // todo use writen
-    if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+    if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
 
@@ -470,8 +464,7 @@ int closeFile(const char* pathname) {
     snprintf(req, reqLen + 1, "%d%08ld%s", CLOSE_FILE, pathnameLen, pathname);
     // puts(req);
 
-    // todo use writen
-    if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+    if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
 
@@ -501,8 +494,7 @@ int removeFile(const char* pathname) {
     snprintf(req, reqLen + 1, "%d%08ld%s", REMOVE_FILE, pathnameLen, pathname);
     // puts(req);
 
-    // todo use writen
-    if (write(SOCKET_FD, req, reqLen - 1) == -1) {
+    if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
 

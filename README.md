@@ -2,7 +2,7 @@
 
 `cacheFns.h` - functions used for determining victim files
 
-`clientApi.h` - given api for the client
+`clientApi.h` - given API for the client
 
 `fileparser.h` - key: value file parser
 
@@ -21,3 +21,5 @@
 `misc.h` - miscellaneous utility functions and macros
 
 `clientServerProtocol.h` - macros related to the communication protocol between clients and the server
+
+`clientInternals.h` - functions shared both by the client API primitives and the higher-level functionalities in `client.c`
