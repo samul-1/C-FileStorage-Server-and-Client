@@ -67,7 +67,7 @@ static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname,
     char timeString[9];  // space for "HH:MM:SS\0"
 
     time(&current_time);
-    //! not re-entrant: fix with localtime_r
+    // ! not re-entrant: fix with localtime_r
     time_info = localtime(&current_time);
     // ! investigate this too: asctime_r? is `time` re-entrant?
     strftime(timeString, sizeof(timeString), "%H:%M:%S", time_info);
@@ -647,7 +647,9 @@ int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, 
     int errnosave = 0;
 
     int readCount = 0;
-    size_t retMaxSize = INITIALBUFSIZ, retCurrSize = 0;
+    size_t
+        retMaxSize = INITIALBUFSIZ,
+        retCurrSize = 0;
 
     char* ret = calloc(INITIALBUFSIZ, 1);
     if (!ret) {
@@ -668,13 +670,14 @@ int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, 
                 goto cleanup;
             }
             ret = tmp;
+            retMaxSize = 2 * retMaxSize;
         }
         sprintf(
             ret + retCurrSize,
             "%08ld%s%08ld",
             strlen(currPtr->pathname), currPtr->pathname, currPtr->contentSize
         );
-        memcpy((ret + strlen(ret)), currPtr->content, currPtr->contentSize);
+        memcpy((ret + retNewSize - (currPtr->contentSize)), currPtr->content, currPtr->contentSize);
         retCurrSize = retNewSize;
 
         currPtr = currPtr->nextPtr;

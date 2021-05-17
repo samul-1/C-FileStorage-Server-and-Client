@@ -126,7 +126,6 @@ int smallrHandler(char* arg, char* dirname) {
     while (currFile) {
         char* outBuf = NULL;
         size_t fileSize = 0;
-        //printf("%s %s\n", "readfile", currFile);
         if (openFile(currFile, O_NOFLAG) == -1) {
             perror("open to read");
             continue;
@@ -184,13 +183,10 @@ int smallwHandler(char* arg, char* dirname) {
         return -1;
     }
 
-    DIR* targetDir = NULL; // ! warning might be uninitialized
-    //FILE* currFileDesc;
-
+    DIR* targetDir = NULL; // ! warning "might be uninitialized"
     struct dirent* currFile;
-    //struct stat st;
 
-    char* filePathname; // contains each file's name preceded by the directory name
+    char* filePathname; // contains each file's path preceded by the directory name
     size_t fileCount = 0; // files processed so far
 
     if ((targetDir = opendir(fromDir)) == NULL) {

@@ -46,11 +46,14 @@ ANSI_COLOR_CYAN "Max total storage size reached: " ANSI_COLOR_RESET "%zu\n" \
 ANSI_COLOR_CYAN "Number of files that have been evicted from the cache: " ANSI_COLOR_RESET "%zu\n" \
 ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLOR_RESET "%zu\n"
 
-#define SEND_EVICTED_FILE(fd, file) \
-snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->contentSize)+1, "%08ld%s%08ld%s", strlen(file->pathname), file->pathname, file->contentSize, file->content);\
-puts(evictedBuf);\
-printf("writing %zu bytes\n", METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize);\
-DIE_ON_NEG_ONE(writen(fd, evictedBuf, (METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize)));
+#define SEND_EVICTED_FILE(fd, file, evictedBuf) \
+    DIE_ON_NULL((evictedBuf = calloc(METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->contentSize)+1, 1)));\
+    snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+1, "%08ld%s%08ld", strlen(file->pathname), file->pathname, file->contentSize);\
+    memcpy(evictedBuf+strlen(evictedBuf), file->content, file->contentSize);\
+    puts(evictedBuf);\
+    printf("writing %zu bytes\n", METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize);\
+    DIE_ON_NEG_ONE(writen(fd, evictedBuf, (METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize)));\
+    free(evictedBuf);
 
 #define SEND_RESPONSE_CODE(fd, code) \
 printf("SENDING CODE %d\n", code);\
@@ -74,6 +77,10 @@ case E2BIG:\
 case EINVAL:\
     SEND_RESPONSE_CODE(fd, BAD_REQUEST);\
     break;\
+}
+
+void cleanup() {
+    unlink(DFL_SOCKNAME);
 }
 
 #define GET_LONGVAL_OR_EXIT(p, k, v, d, failcond)\
@@ -152,11 +159,6 @@ struct workerArgs {
 
 volatile sig_atomic_t softExit = 0;
 volatile sig_atomic_t hardExit = 0;
-
-void unlinkSock() {
-    // !!! remove this
-    unlink(DFL_SOCKNAME);
-}
 
 void exitSigHandler(int sig) {
     // ! if sig == SIGINT || sig == SIGTSTP then hardexit = 1, if sig == SIGINT then softexit = 1
@@ -250,7 +252,7 @@ void* _startWorker(void* args) {
                     else {
                         SEND_RESPONSE_CODE(rdy_fd, OK);
                         // if there were clients waiting to acquire lock on the deleted file(s) notify them
-                        //that the file(s) don't exist (anymore)
+                        // that the file(s) don't exist (anymore)
                         NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
                     }
                 }
@@ -298,6 +300,7 @@ void* _startWorker(void* args) {
                 readNFilesHandler(store, upperLimit, (void**)&res, &resSize);
                 SEND_RESPONSE_CODE(rdy_fd, OK);
                 DIE_ON_NEG_ONE(writen(rdy_fd, res, resSize));
+                free(res);
                 DIE_ON_NEG_ONE(writen(rdy_fd, NO_MORE_CONTENT, strlen(NO_MORE_CONTENT)));
                 break;
             case WRITE_FILE:
@@ -325,18 +328,18 @@ void* _startWorker(void* args) {
                     // notify them that the file(s) don't exist (anymore)
                     NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
                     // todo probably allocate this dynamically
-                    char evictedBuf[10000] = "";
+                    char* evictedBuf;
                     // send evicted files to client
                     while (evictedList) {
                         printf("EVICTING %s\n", evictedList->pathname);
                         FileNode_t* tmpPtr = evictedList;
-                        SEND_EVICTED_FILE(rdy_fd, evictedList);
+                        SEND_EVICTED_FILE(rdy_fd, evictedList, evictedBuf);
                         evictedList = evictedList->nextPtr;
                         deallocFile(tmpPtr);
                     }
                     // tell the client there are no more evicted files to read
-                    sprintf(evictedBuf, NO_MORE_CONTENT);
-                    DIE_ON_NEG_ONE(writen(rdy_fd, evictedBuf, strlen(NO_MORE_CONTENT)));
+                    char noMoreContent[] = NO_MORE_CONTENT;
+                    DIE_ON_NEG_ONE(writen(rdy_fd, noMoreContent, strlen(NO_MORE_CONTENT)));
                 }
                 free(recvLine2);
                 break;
@@ -438,6 +441,7 @@ int main(int argc, char** argv) {
         printErrAsStr(configParser);
         return EXIT_FAILURE;
     }
+    atexit(cleanup);
 
 
     ssize_t
@@ -482,9 +486,6 @@ int main(int argc, char** argv) {
     DIE_ON_NEG_ONE(sigaction(SIGINT, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGHUP, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGTSTP, &sig_handler, NULL));
-    // ! remove this
-    atexit(unlinkSock);
-
 
     BoundedBuffer* taskBuffer; // used by manager thread to pass incoming requests to workers
     CacheStorage_t* store; // in-memory file storage system
