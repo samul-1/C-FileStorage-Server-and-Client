@@ -183,7 +183,7 @@ int openFile(const char* pathname, int flags) {
         return -1;
     }
     // construct request message
-    snprintf(req, reqLen, "%d%08ld%s%d", OPEN_FILE, pathnameLen, pathname, flags);
+    snprintf(req, reqLen, "%d%010ld%s%d", OPEN_FILE, pathnameLen, pathname, flags);
     if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
     }
@@ -199,7 +199,7 @@ int readNFiles(int N, const char* dirname) {
     char req[METADATA_SIZE + REQ_CODE_LEN + 1];
 
     // construct request message
-    snprintf(req, METADATA_SIZE + REQ_CODE_LEN + 1, "%d%08d", READ_N_FILES, N);
+    snprintf(req, METADATA_SIZE + REQ_CODE_LEN + 1, "%d%010d", READ_N_FILES, N);
 
     if (writen(SOCKET_FD, req, METADATA_SIZE + REQ_CODE_LEN) == -1) {
         return -1;
@@ -238,7 +238,7 @@ int readFile(const char* pathname, void** buf, size_t* size) {
     }
 
     // construct request message
-    snprintf(req, reqLen + 1, "%d%08ld%s", READ_FILE, pathnameLen, pathname);
+    snprintf(req, reqLen + 1, "%d%010ld%s", READ_FILE, pathnameLen, pathname);
 
     if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
@@ -327,7 +327,7 @@ int writeFile(const char* pathname, const char* dirname) {
 
     // todo investigate whether the +1 at the end of length is needed
     // construct request message
-    snprintf(req, reqLen + 1, "%d%08ld%s%08ld", WRITE_FILE, pathnameLen, pathname, filecontentLen);
+    snprintf(req, reqLen + 1, "%d%010ld%s%010ld", WRITE_FILE, pathnameLen, pathname, filecontentLen);
     // append file content to request
     memcpy((req + strlen(req)), filecontentBuf, filecontentLen);
 
@@ -368,7 +368,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     if (!req) {
         return -1;
     }
-    snprintf(req, reqLen + 1, "%d%08ld%s%08ld", APPEND_TO_FILE, pathnameLen, pathname, size);
+    snprintf(req, reqLen + 1, "%d%010ld%s%010ld", APPEND_TO_FILE, pathnameLen, pathname, size);
     // append binary content of the file
     memcpy((req + strlen(req)), buf, size);
 
@@ -406,7 +406,7 @@ int lockFile(const char* pathname) {
     }
 
     // construct request message
-    snprintf(req, reqLen + 1, "%d%08ld%s", LOCK_FILE, pathnameLen, pathname);
+    snprintf(req, reqLen + 1, "%d%010ld%s", LOCK_FILE, pathnameLen, pathname);
 
     if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
@@ -436,7 +436,7 @@ int unlockFile(const char* pathname) {
     }
 
     // construct request message
-    snprintf(req, reqLen + 1, "%d%08ld%s", UNLOCK_FILE, pathnameLen, pathname);
+    snprintf(req, reqLen + 1, "%d%010ld%s", UNLOCK_FILE, pathnameLen, pathname);
 
     if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
@@ -466,8 +466,7 @@ int closeFile(const char* pathname) {
     }
 
     // construct request message
-    snprintf(req, reqLen + 1, "%d%08ld%s", CLOSE_FILE, pathnameLen, pathname);
-    // puts(req);
+    snprintf(req, reqLen + 1, "%d%010ld%s", CLOSE_FILE, pathnameLen, pathname);
 
     if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
@@ -496,8 +495,7 @@ int removeFile(const char* pathname) {
     }
 
     // construct request message
-    snprintf(req, reqLen + 1, "%d%08ld%s", REMOVE_FILE, pathnameLen, pathname);
-    // puts(req);
+    snprintf(req, reqLen + 1, "%d%010ld%s", REMOVE_FILE, pathnameLen, pathname);
 
     if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;

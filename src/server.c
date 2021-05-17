@@ -48,7 +48,7 @@ ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLO
 
 #define SEND_EVICTED_FILE(fd, file, evictedBuf) \
     DIE_ON_NULL((evictedBuf = calloc(METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->contentSize)+1, 1)));\
-    snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+1, "%08ld%s%08ld", strlen(file->pathname), file->pathname, file->contentSize);\
+    snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+1, "%010ld%s%010ld", strlen(file->pathname), file->pathname, file->contentSize);\
     memcpy(evictedBuf+strlen(evictedBuf), file->content, file->contentSize);\
     puts(evictedBuf);\
     printf("writing %zu bytes\n", METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize);\
@@ -119,7 +119,7 @@ while (notifyList) {\
     free(tmpPtr);\
 }
 
-#define NO_MORE_CONTENT "00000000"
+#define NO_MORE_CONTENT "0000000000"
 #define CLIENT_LEFT_MSG "0000"
 
 char* getRequestPayloadSegment(int fd, size_t* segSize) {
@@ -282,8 +282,9 @@ void* _startWorker(void* args) {
                     SEND_RESPONSE_CODE(rdy_fd, OK);
                     // send file content's length and file content
                     DIE_ON_NULL((sendLine = calloc(METADATA_SIZE + readSize + 1, 1)));
-                    snprintf(sendLine, METADATA_SIZE + 1, "%08ld", readSize);
+                    snprintf(sendLine, METADATA_SIZE + 1, "%010ld", readSize);
                     memcpy(sendLine + METADATA_SIZE, outBuf, readSize);
+                    puts(sendLine);
                     DIE_ON_NEG_ONE(writen(rdy_fd, sendLine, METADATA_SIZE + readSize));
 
                     free(sendLine);

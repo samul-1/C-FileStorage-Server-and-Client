@@ -711,7 +711,7 @@ int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, 
         }
         sprintf(
             ret + retCurrSize,
-            "%08ld%s%08ld",
+            "%010ld%s%010ld",
             strlen(currPtr->pathname), currPtr->pathname, currPtr->contentSize
         );
         memcpy((ret + retNewSize - (currPtr->contentSize)), currPtr->content, currPtr->contentSize);
