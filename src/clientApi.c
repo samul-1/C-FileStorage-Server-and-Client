@@ -325,9 +325,12 @@ int writeFile(const char* pathname, const char* dirname) {
         return -1;
     }
 
-    // todo change this to handle binary data
+    // todo investigate whether the +1 at the end of length is needed
     // construct request message
-    snprintf(req, reqLen + 1, "%d%08ld%s%08ld%s", WRITE_FILE, pathnameLen, pathname, filecontentLen, filecontentBuf);
+    snprintf(req, reqLen + 1, "%d%08ld%s%08ld", WRITE_FILE, pathnameLen, pathname, filecontentLen);
+    // append file content to request
+    memcpy((req + strlen(req)), filecontentBuf, filecontentLen);
+
     if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         int errnosave = errno;
         free(req);
@@ -360,12 +363,14 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     }
 
     size_t pathnameLen = strlen(pathname);
-    size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + size + 1;
+    size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + size + 1; // ? +1 with binary?
     char* req = calloc(reqLen, 1);
     if (!req) {
         return -1;
     }
-    snprintf(req, reqLen + 1, "%d%08ld%s%08ld%s", APPEND_TO_FILE, pathnameLen, pathname, size, (char*)buf);
+    snprintf(req, reqLen + 1, "%d%08ld%s%08ld", APPEND_TO_FILE, pathnameLen, pathname, size);
+    // append binary content of the file
+    memcpy((req + strlen(req)), buf, size);
 
     if (writen(SOCKET_FD, req, reqLen - 1) == -1) {
         return -1;
