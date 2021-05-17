@@ -16,7 +16,7 @@ void* logFlusher(void* args) {
     fputs(buf, logFile);
     while (true) {
         dequeue(store->logBuffer, buf, EVENT_SLOT_SIZE);
-        if (!strncmp(buf, "EXIT", 4)) { // termination message
+        if (!strncmp(buf, LOGGER_EXIT_MSG, strlen(LOGGER_EXIT_MSG))) {
             break;
         }
         fputs(buf, logFile);

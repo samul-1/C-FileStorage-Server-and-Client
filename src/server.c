@@ -615,7 +615,7 @@ cleanup:
         DIE_ON_NEG_ONE(enqueue(taskBuffer, (void*)&term, 0));
     }
     // send termination message to log thread
-    DIE_ON_NEG_ONE(enqueue(store->logBuffer, "EXIT", strlen("EXIT")));
+    DIE_ON_NEG_ONE(enqueue(store->logBuffer, LOGGER_EXIT_MSG, strlen(LOGGER_EXIT_MSG)));
 
     // wait for all threads to die
     for (size_t i = 0; i < workerPoolSize; i++) {

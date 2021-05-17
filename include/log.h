@@ -3,6 +3,7 @@
 
 #define EVENT_SLOT_SIZE 1024
 #define EVENT_BUF_CAP 5000
+#define LOGGER_EXIT_MSG "EXIT"
 
 #define MAX_LOG_PATHNAME 1024
 #include "../include/filesystemApi.h"
