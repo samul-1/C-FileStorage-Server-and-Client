@@ -172,6 +172,7 @@ void exitSigHandler(int sig) {
 }
 
 // todo put this in manager and handle this without the shared var
+// todo also add a `maxClientCount`
 ssize_t updateClientCount(ssize_t delta) {
     static pthread_mutex_t countMutex = PTHREAD_MUTEX_INITIALIZER;
     static ssize_t count = 0;
@@ -628,6 +629,7 @@ cleanup:
     DIE_ON_NEG_ONE(close(w2mPipe[0]));
     DIE_ON_NEG_ONE(close(w2mPipe[1]));
 
+    // todo log stats too
     // we can access the thread without locking any mutex because we're the only thread left standing
     printf(
         STAT_MSG,
