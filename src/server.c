@@ -113,7 +113,7 @@ while (notifyList) {\
 #define NO_MORE_CONTENT "00000000"
 #define CLIENT_LEFT_MSG "0000"
 
-char* getRequestPayloadSegment(int fd) {
+char* getRequestPayloadSegment(int fd, size_t* segSize) {
     /**
      * @brief Takes in an fd that has written a segment of a request payload, reads the payload, and returns it.
      * @note This function assumes the fd has written a string that abides by the protocol: \n
@@ -131,11 +131,15 @@ char* getRequestPayloadSegment(int fd) {
         * recvBuf;
 
     DIE_ON_NEG_ONE(readn(fd, metadataBuf, METADATA_SIZE)); // todo better error handling
-    size_t filenameLen = atol(metadataBuf);
+    size_t segmentLen = atol(metadataBuf);
 
-    // now we have enough memory to store the filename
-    DIE_ON_NULL((recvBuf = calloc(filenameLen + 1, 1)));
-    DIE_ON_NEG_ONE(readn(fd, recvBuf, filenameLen));
+    if (segSize) {
+        *segSize = segmentLen;
+    }
+
+    // now we have enough memory to store the segment
+    DIE_ON_NULL((recvBuf = calloc(segmentLen + 1, 1)));
+    DIE_ON_NEG_ONE(readn(fd, recvBuf, segmentLen));
 
     return recvBuf;
 }
@@ -227,7 +231,7 @@ void* _startWorker(void* args) {
 
             // get request filepath from client
             if (requestCode != READ_N_FILES) {
-                recvLine1 = getRequestPayloadSegment(rdy_fd);
+                recvLine1 = getRequestPayloadSegment(rdy_fd, NULL);
             }
 
             switch (requestCode) {
@@ -302,7 +306,7 @@ void* _startWorker(void* args) {
                 if (!testFirstWrite(store, recvLine1, rdy_fd)) {
                     SEND_RESPONSE_CODE(rdy_fd, FORBIDDEN);
                     // throw away the rest of the request payload
-                    recvLine2 = getRequestPayloadSegment(rdy_fd);
+                    recvLine2 = getRequestPayloadSegment(rdy_fd, NULL);
                     free(recvLine2);
                     break;
                 }
@@ -310,8 +314,9 @@ void* _startWorker(void* args) {
             case APPEND_TO_FILE:
                 puts("append");
                 // get content to write/append
-                recvLine2 = getRequestPayloadSegment(rdy_fd);
-                if (writeToFileHandler(store, recvLine1, recvLine2, &notifyList, &evictedList, rdy_fd) == -1) {
+                size_t fileContentSize = 0;
+                recvLine2 = getRequestPayloadSegment(rdy_fd, &fileContentSize);
+                if (writeToFileHandler(store, recvLine1, recvLine2, fileContentSize, &notifyList, &evictedList, rdy_fd) == -1) {
                     HANDLE_REQ_ERROR(rdy_fd);
                 }
                 else {

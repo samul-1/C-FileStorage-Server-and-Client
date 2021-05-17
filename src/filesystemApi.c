@@ -693,7 +693,7 @@ cleanup:
     return errno ? -1 : readCount;
 }
 
-int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* newContent, struct fdNode** notifyList, FileNode_t** evictedList, const int requestor) {
+int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* newContent, const size_t newContentLen, struct fdNode** notifyList, FileNode_t** evictedList, const int requestor) {
     /**
      * @brief Handles write-to-file requests from client. These can be appends on existing files or a whole new file
      *
@@ -754,7 +754,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     // actual write operation
-    size_t newContentLen = strlen(newContent);
+    //size_t newContentLen = strlen(newContent);
 
     if (fptr->contentSize + newContentLen > store->maxStorageSize) {
         // file cannot be stored because it is too large
