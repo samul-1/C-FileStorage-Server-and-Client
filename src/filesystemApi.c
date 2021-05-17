@@ -611,9 +611,8 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
         errnosave = ENOMEM;
     }
     else {
-        // todo memcpy
-        strncpy(ret, fptr->content, fptr->contentSize);
-        ret[fptr->contentSize] = '\0'; // ? necessary?
+        memcpy(ret, fptr->content, fptr->contentSize);
+        //ret[fptr->contentSize] = '\0'; // ? necessary with bin?
 
         *buf = ret;
         *size = fptr->contentSize;
@@ -672,9 +671,10 @@ int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, 
         }
         sprintf(
             ret + retCurrSize,
-            "%08ld%s%08ld%s",
-            strlen(currPtr->pathname), currPtr->pathname, currPtr->contentSize, currPtr->content
+            "%08ld%s%08ld",
+            strlen(currPtr->pathname), currPtr->pathname, currPtr->contentSize
         );
+        memcpy((ret + strlen(ret)), currPtr->content, currPtr->contentSize);
         retCurrSize = retNewSize;
 
         currPtr = currPtr->nextPtr;
@@ -687,7 +687,7 @@ cleanup:
     *buf = ret;
     *size = retCurrSize;
 
-    printf("return %s\n return length %zu\n actual length %zu\n", ret, retCurrSize, strlen(ret));
+    //printf("return %s\n return length %zu\n actual length %zu\n", ret, retCurrSize, strlen(ret));
 
     errno = errnosave ? errnosave : errno;
     return errno ? -1 : readCount;
@@ -754,8 +754,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     // actual write operation
-    //size_t newContentLen = strlen(newContent);
-
+    // ! here you would do the compression and do everything with the compressed size
     if (fptr->contentSize + newContentLen > store->maxStorageSize) {
         // file cannot be stored because it is too large
         errnosave = E2BIG;
@@ -778,16 +777,18 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         // todo log eviction of file
     }
 
+    //size_t oldLen = fptr->contentSize;
+
     store->currStorageSize += newContentLen;
     store->maxReachedStorageSize = MAX(store->maxReachedStorageSize, store->currStorageSize);
 
-    size_t oldLen = strlen(fptr->content);
-    void* tmp = realloc(fptr->content, fptr->contentSize + newContentLen + 1);
+    void* tmp = realloc(fptr->content, fptr->contentSize + newContentLen + 1); //? +1 needed with bin?
     if (tmp) {
         fptr->content = tmp;
-        fptr->content[oldLen] = '\0';
-        // todo memcpy(fptr->content + fptr->contentSize, newContent, newContentLen)
-        strncat(fptr->content, newContent, newContentLen);
+        // !!!!! commented because we shouldn't need it with binaries
+        //fptr->content[oldLen] = '\0';
+        // append new content to file
+        memcpy((fptr->content + fptr->contentSize), newContent, newContentLen);
         fptr->contentSize += newContentLen;
     }
     else {

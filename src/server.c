@@ -324,6 +324,7 @@ void* _startWorker(void* args) {
                     // if there were clients waiting to acquire lock on the deleted file(s),
                     // notify them that the file(s) don't exist (anymore)
                     NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
+                    // todo probably allocate this dynamically
                     char evictedBuf[10000] = "";
                     // send evicted files to client
                     while (evictedList) {
