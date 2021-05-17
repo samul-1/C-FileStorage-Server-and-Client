@@ -1,8 +1,8 @@
 # max storage capacity *in bytes*
-MAXSTORAGECAP=100
+MAXSTORAGECAP=25
 
 # max number of files
-MAXFILECOUNT=10
+MAXFILECOUNT=4
 
 # number of worker threads
 WORKERPOOLSIZE=5

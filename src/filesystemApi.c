@@ -376,9 +376,7 @@ FileNode_t* allocFile(const char* pathname) {
 
     DIE_ON_NZ(pthread_mutex_init(&(newFile->mutex), NULL));
 
-    // TODO handle dynamic resizing of buffers for larger data
     strncpy(newFile->pathname, pathname, INITIALBUFSIZ);
-
 
     return newFile;
 }
@@ -516,7 +514,7 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
     if (!alreadyExists) {
         if (store->currFileNum == store->maxFileNum) {
             FileNode_t* victim = getVictim(store, NULL);
-            destroyFile(store, victim, notifyList, true); // todo ask about sending file back on openFile just like on writeFile
+            destroyFile(store, victim, notifyList, true);
         }
         fPtr = allocFile(pathname);
         if (!fPtr) {
@@ -735,7 +733,6 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     // this can't be true at this time because it would mean two writers both have mutex over the store
     assert(!fptr->isBeingWritten);
 
-    // todo check the last operation was open file
     if ((fptr->lockedBy && fptr->lockedBy != requestor) || !isFdInList(fptr->openDescriptors, requestor)) {
         errnosave = EACCES;
         DIE_ON_NZ(pthread_mutex_unlock(&(fptr->ordering)));
@@ -778,7 +775,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
 
         // make a single list with all the clients that need to be notified that a file they were blocked on doesn't exist (anymore)
         concatenateFdLists(notifyList, tmpList);
-        // todo send victim back somehow and log eviction of file
+        // todo log eviction of file
     }
 
     store->currStorageSize += newContentLen;
@@ -852,7 +849,6 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
     while (fptr->activeReaders > 0 || fptr->isBeingWritten) {
         DIE_ON_NZ(pthread_cond_wait(&(fptr->rwCond), &(fptr->mutex)));
     }
-    // todo check file was opened by requestor
 
     if (fptr->lockedBy && fptr->lockedBy != requestor) {
         // lock cannot be gained at the moment: place requestor on waiting queue and return
@@ -882,7 +878,6 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
     return 0;
 }
 
-// todo test
 int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const int requestor) {
     /**
      * @brief Routine called each time a client closes connection. Releases lock from all files that the client \n
@@ -927,7 +922,6 @@ int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const i
             currPtr->lockedBy = newLock;
         }
 
-        // todo test
         // if client was blocked on a file waiting to lock it, remove it from the waiting list
         popNodeFromFdQueue(&(currPtr->pendingLocks_hPtr), requestor);
 
@@ -1005,7 +999,6 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
     return errno ? -1 : 0;
 }
 
-// todo add a newlock argument and do the same as with unlockfile
 int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requestor) {
     /**
      * @brief Handles close-file requests from client.

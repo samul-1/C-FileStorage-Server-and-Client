@@ -238,7 +238,6 @@ void* _startWorker(void* args) {
                     SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
                 }
                 else {
-                    // todo check errors
                     if (openFileHandler(store, recvLine1, flags, &notifyList, rdy_fd) == -1) {
                         HANDLE_REQ_ERROR(rdy_fd);
                     }
@@ -259,7 +258,7 @@ void* _startWorker(void* args) {
                     SEND_RESPONSE_CODE(rdy_fd, OK);
                 }
                 break;
-            case READ_FILE: // todo implement -R that reads random files from server
+            case READ_FILE:
                 ;
                 char* outBuf;
                 size_t readSize;
@@ -410,7 +409,7 @@ void* _startWorker(void* args) {
             DIE_ON_NEG_ONE(write(pipeOut, "0000", PIPE_BUF_LEN)); // when the manager reads "0", he'll know a client left
         }
     }
-    pthread_exit(NULL);
+    return NULL;
 }
 
 
@@ -606,7 +605,6 @@ int main(int argc, char** argv) {
 cleanup:
     puts("cleanup");
     ;
-    // todo ! ask teachers if you need to explicitly call `close` on all the fd's
     // send termination message(s) to workers
     int term = 0;
     for (size_t i = 0; i < workerPoolSize; i++) {
