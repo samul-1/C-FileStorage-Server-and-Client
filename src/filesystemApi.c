@@ -1,3 +1,4 @@
+/*! \file */
 /**
  * Provides wrappers for the functions defined in `filesystem.c` that guarantee
  * cache-level and file-level mutual exclusion and state consistency.
@@ -5,6 +6,7 @@
  *
  * These are the functions that are directly called by the server.
  */
+
 
 #include "../utils/scerrhand.h"
 #include <errno.h>
@@ -18,7 +20,6 @@
 #include "../include/clientServerProtocol.h"
 
 #define MAX(a,b) (a) > (b) ? (a) : (b)
-
 
 #define UPDATE_CACHE_BITS(p)\
     p->lastRef = time(0); \
@@ -237,7 +238,7 @@ static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode**
      * @param store A pointer to the storage containing the file
      * @param fptr A pointer to the file to delete
      * @param notifyList A pointer to a list of file descriptors that were waiting to gain lock of this file. \n
-     * *NB*: the caller needs to `free` the list at a later point
+     * *Note*: the caller needs to `free` the list at a later point
      * @param deallocMem If `false`, the file will be removed from the storage but it won't be `free`d. This allows \n
      * the caller to retain a pointer to the file and `free` it later. This is used for sending evicted files back to the client
      *
@@ -295,7 +296,7 @@ static void destroyFile(CacheStorage_t* store, FileNode_t* fptr, struct fdNode**
     DIE_ON_NZ(pthread_mutex_destroy(&(fptr->ordering)));
 
     // delete from dictionary
-    assert(icl_hash_delete(store->dictStore, fptr->pathname, NULL, NULL) == 0); // must succeed
+    DIE_ON_NZ(icl_hash_delete(store->dictStore, fptr->pathname, NULL, NULL));
 
     if (deallocMem) {
         deallocFile(fptr);
@@ -333,7 +334,7 @@ CacheStorage_t* allocStorage(const size_t maxFileNum, const size_t maxStorageSiz
 
 int destroyStorage(CacheStorage_t* store) {
     /**
-     * @note: Assumes it will be called once all but one threads have die (therefore no mutex required)
+     * @note: Assumes only one thread has access to the store (hence no explicit mutual exclusion needed).
      */
     if (!store) {
         errno = EINVAL;
@@ -358,7 +359,7 @@ int destroyStorage(CacheStorage_t* store) {
 }
 
 
-FileNode_t* allocFile(const char* pathname) {
+static FileNode_t* allocFile(const char* pathname) {
     FileNode_t* newFile = calloc(sizeof(*newFile), 1);
     if (!newFile) {
         errno = ENOMEM;
@@ -384,6 +385,8 @@ FileNode_t* allocFile(const char* pathname) {
 static FileNode_t* findFile(const CacheStorage_t* store, const char* pathname) {
     /**
      * @brief Looks for a file in the storage.
+     *
+     * @note Assumes the caller has mutual exclusion over the store.
      *
      * @param store A pointer to the storage to search
      * @param pathname The absolute pathname of the file to look for
@@ -458,7 +461,7 @@ void addFileToStore(CacheStorage_t* store, FileNode_t* filePtr) {
     store->tPtr = filePtr;
 
     // add file to dict structure
-    icl_hash_insert(store->dictStore, filePtr->pathname, filePtr); // todo manage error
+    DIE_ON_NULL(icl_hash_insert(store->dictStore, filePtr->pathname, filePtr));
 
     store->currFileNum += 1;
     store->currStorageSize += filePtr->contentSize;
@@ -559,6 +562,22 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
     return errno ? -1 : 0;
 }
 int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, size_t* size, const int requestor) {
+    /**
+     * @brief Handles read-file requests from client.
+     *
+     * @param store A pointer to the storage containing the file
+     * @param pathname Absolute pathname of the file
+     * @param buf Pointer to a buffer allocated on the heap which contains the read content. *Note*: the memory \n
+     * needs to be `free`d by the caller.
+     * @param size Amount of bytes read from the file.
+     *
+     * @return 0 on success, -1 on error (sets `errno`)
+     *
+     * `errno` values: \n
+     * `ENOENT` file not found \n
+     * `EACCES` file is locked or hasn't been opened by the requesting client \n
+     * `EINVAL` invalid parameters
+     */
     CHECK_INPUT(store, pathname, requestor);
     int errnosave = 0;
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
@@ -640,6 +659,24 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
 }
 
 int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, size_t* size) {
+    /**
+     * @brief Handles read-n-files requests from client.
+     *
+     * @param store A pointer to the storage from which to read.
+     * @param upperLimit Maximum number of files to read, or <= 0 to read all the files.
+     * @param buf Pointer to a buffer allocated on the heap which contains the response. *Note*: the memory \n
+     * needs to be `free`d by the caller.
+     * @param size Amount of bytes read in `buf`.
+     *
+     * @return the number of read files on success, -1 on error (sets `errno`)
+     *
+     * This function effectively takes a "snapshot" of the current state of `store`, and all reads are \n
+     * done in mutual exclusion to prevent changes to the storages while the function is running.
+     *
+     * `errno` values: \n
+     * `ENOMEM` memory for the response couldn't be allocated \n
+     * `EINVAL` invalid parameters
+     */
     if (!store) {
         errno = EINVAL;
         return -1;
@@ -690,8 +727,6 @@ cleanup:
     *buf = ret;
     *size = retCurrSize;
 
-    //printf("return %s\n return length %zu\n actual length %zu\n", ret, retCurrSize, strlen(ret));
-
     errno = errnosave ? errnosave : errno;
     return errno ? -1 : readCount;
 }
@@ -708,7 +743,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
      * @return 0 on success, -1 on error (sets `errno`)
      *
      * `errno` values: \n
-     * `ENOENT' file not found \n
+     * `ENOENT` file not found \n
      * `EINVAL` invalid parameters
      */
 
@@ -780,17 +815,12 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         // todo log eviction of file
     }
 
-    //size_t oldLen = fptr->contentSize;
-
     store->currStorageSize += newContentLen;
     store->maxReachedStorageSize = MAX(store->maxReachedStorageSize, store->currStorageSize);
 
     void* tmp = realloc(fptr->content, fptr->contentSize + newContentLen + 1); //? +1 needed with bin?
     if (tmp) {
         fptr->content = tmp;
-        // !!!!! commented because we shouldn't need it with binaries
-        //fptr->content[oldLen] = '\0';
-        // append new content to file
         memcpy((fptr->content + fptr->contentSize), newContent, newContentLen);
         fptr->contentSize += newContentLen;
     }
@@ -828,7 +858,7 @@ int lockFileHandler(CacheStorage_t* store, const char* pathname, const int reque
      * has been placed on the pending lock queue of the file.
      *
      * `errno` values: \n
-     * `ENOENT' file not found \n
+     * `ENOENT` file not found \n
      * `EINVAL` invalid parameters
      */
     DIE_ON_NZ(pthread_mutex_lock(&(store->mutex)));
@@ -953,7 +983,7 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
      * @return 0 on success, -1 on error (sets `errno`)
      *
      * `errno` values: \n
-     * `ENOENT' file not found \n
+     * `ENOENT` file not found \n
      * `EINVAL` invalid parameters
      */
     CHECK_INPUT(store, pathname, requestor);
@@ -1014,7 +1044,7 @@ int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requ
      * @return 0 on success, -1 on error (sets `errno`)
      *
      * `errno` values: \n
-     * `ENOENT' file not found \n
+     * `ENOENT` file not found \n
      * `EINVAL` invalid parameters
      */
     CHECK_INPUT(store, pathname, requestor);
@@ -1070,7 +1100,7 @@ int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode
      * @return 0 on success, -1 on error (sets `errno`)
      *
      * `errno` values: \n
-     * `ENOENT' file not found \n
+     * `ENOENT` file not found \n
      * `EINVAL` invalid parameters \n
      * `EACCES` trying to delete a file that's unlocked or locked by another process
      */
@@ -1096,6 +1126,10 @@ int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode
 }
 
 bool testFirstWrite(CacheStorage_t* store, const char* pathname, const int requestor) {
+    /**
+     * Returns `true` if the requested file exists and has been created and locked by the requestor, \n
+     * i.e. the conditions to call `writeFile` on it are met; otherwise returns `false` and might set `errno`.
+     */
     if (!store || !strlen(pathname) || requestor <= 0) {
         errno = EINVAL;
         return false;
@@ -1108,7 +1142,7 @@ bool testFirstWrite(CacheStorage_t* store, const char* pathname, const int reque
 
     if (!fptr) {
         DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));
-        return -1;
+        return false;
     }
 
     DIE_ON_NZ(pthread_mutex_lock(&(fptr->ordering)));

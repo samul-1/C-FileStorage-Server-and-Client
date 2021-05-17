@@ -42,7 +42,7 @@
 #define STAT_MSG \
 ANSI_COLOR_BG_GREEN "       " ANSI_COLOR_RESET " Statistics: " ANSI_COLOR_BG_GREEN "       " ANSI_COLOR_RESET "\n"\
 ANSI_COLOR_CYAN "Max number of files reached: " ANSI_COLOR_RESET "%zu\n" \
-ANSI_COLOR_CYAN "Max total storage size reached: " ANSI_COLOR_RESET "%zu\n" \
+ANSI_COLOR_CYAN "Max total storage size reached: " ANSI_COLOR_RESET "%zu bytes\n" \
 ANSI_COLOR_CYAN "Number of files that have been evicted from the cache: " ANSI_COLOR_RESET "%zu\n" \
 ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLOR_RESET "%zu\n"
 
@@ -97,13 +97,15 @@ do {\
 } while(0);
 
 #define GET_VAL_OR_EXIT(p, k, b, d)\
+do { \
     if(getValueFor(p, k, b, d) == -1) {\
-    perror("Error getting value for " #k);\
-    if(p) {\
-        destroyParser(p);\
+        perror("Error getting value for " #k);\
+        if(p) {\
+            destroyParser(p);\
+        }\
+        exit(EXIT_FAILURE);\
     }\
-    exit(EXIT_FAILURE);\
-}
+} while(0);
 
 
 #define NOTIFY_PENDING_CLIENTS(notifyList, notifyCode, pipeBuf, pipeOut)\
@@ -137,7 +139,7 @@ char* getRequestPayloadSegment(int fd, size_t* segSize) {
         metadataBuf[METADATA_SIZE + 1] = "",
         * recvBuf;
 
-    DIE_ON_NEG_ONE(readn(fd, metadataBuf, METADATA_SIZE)); // todo better error handling
+    DIE_ON_NEG_ONE(readn(fd, metadataBuf, METADATA_SIZE));
     size_t segmentLen = atol(metadataBuf);
 
     if (segSize) {
@@ -169,6 +171,7 @@ void exitSigHandler(int sig) {
         hardExit = 1;
 }
 
+// todo put this in manager and handle this without the shared var
 ssize_t updateClientCount(ssize_t delta) {
     static pthread_mutex_t countMutex = PTHREAD_MUTEX_INITIALIZER;
     static ssize_t count = 0;
@@ -280,7 +283,6 @@ void* _startWorker(void* args) {
                     // send file content's length and file content
                     DIE_ON_NULL((sendLine = calloc(METADATA_SIZE + readSize + 1, 1)));
                     snprintf(sendLine, METADATA_SIZE + 1, "%08ld", readSize);
-                    // we're not putting the "+ 1" after `METADATA_SIZE` because we want to overwrite the '\0' by `snprintf`
                     memcpy(sendLine + METADATA_SIZE, outBuf, readSize);
                     DIE_ON_NEG_ONE(writen(rdy_fd, sendLine, METADATA_SIZE + readSize));
 
@@ -327,7 +329,6 @@ void* _startWorker(void* args) {
                     // if there were clients waiting to acquire lock on the deleted file(s),
                     // notify them that the file(s) don't exist (anymore)
                     NOTIFY_PENDING_CLIENTS(notifyList, FILE_NOT_FOUND, pipeBuf, pipeOut);
-                    // todo probably allocate this dynamically
                     char* evictedBuf;
                     // send evicted files to client
                     while (evictedList) {
@@ -352,6 +353,7 @@ void* _startWorker(void* args) {
                 }
                 else if (outcome == -2) {
                     // client has to wait in order to acquire the lock: don't send any response for now
+                    // and don't put it back in the readset of `select`
                     putFdBack = false;
                 }
                 else {
@@ -391,33 +393,27 @@ void* _startWorker(void* args) {
                 printf("\n\n---\n- %ld\n- %s\n\n-----\n", requestCode, codeBuf);
                 SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
             }
-            // puts("Store:");
-            // printStore(store);
-            // puts("Affected file:");
-            //printFile(store, recvLine1);
-
             // free the resources allocated to handle the request
             if (requestCode != READ_N_FILES) {
                 free(recvLine1);
             }
             if (putFdBack) { // we're done handling this request - tell manager to put fd back in readset
-                //printf("putting back %d\n", rdy_fd);
-                // convert int to string
                 snprintf(pipeBuf, PIPE_BUF_LEN, "%04d", rdy_fd);
-                // tell manager we're done handling the request
                 DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, PIPE_BUF_LEN));
             }
         }
         else {
             puts("client left");
-            // releases lock from all files the client had locked, and gets list of all clients that were "first in line" waiting to lock the file(s)
+            // releases lock from all files the client had locked, and gets list of all clients that were 
+            // "first in line" waiting to lock the file(s)
             DIE_ON_NEG_ONE(clientExitHandler(store, &notifyList, rdy_fd));
-            // if the client had locked one or more files, and any of them had other clients blocked waiting to acquire the lock,
-            // notify them that the operation has been completed successfully (they acquired the lock)
+            // if the client had locked one or more files, and any of them had other clients blocked waiting to acquire
+            // the lock, notify them that the operation has been completed successfully (they acquired the lock)
             NOTIFY_PENDING_CLIENTS(notifyList, OK, pipeBuf, pipeOut);
 
             updateClientCount(-1);
-            DIE_ON_NEG_ONE(write(pipeOut, CLIENT_LEFT_MSG, PIPE_BUF_LEN)); // when the manager reads "0", he'll know a client left
+            // when the manager reads "0", he'll know a client left
+            DIE_ON_NEG_ONE(write(pipeOut, CLIENT_LEFT_MSG, PIPE_BUF_LEN));
         }
     }
     return NULL;
@@ -599,7 +595,6 @@ int main(int argc, char** argv) {
                     }
                 }
                 else { // new request from already connected client
-                    //puts("new request");
                     void* fd = &i;
                     FD_CLR(i, &setsave);
                     if (i == fd_num) {

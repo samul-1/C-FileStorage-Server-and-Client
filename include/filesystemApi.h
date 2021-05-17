@@ -66,8 +66,6 @@ typedef struct cacheStorage {
 
 
 // ! remove
-FileNode_t* allocFile(const char* pathname);
-
 void printFile(const CacheStorage_t* store, const char* pathname);
 void printFileptr(FileNode_t* f);
 void printStore(const CacheStorage_t* store);
