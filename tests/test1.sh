@@ -1,0 +1,1 @@
+./../build/client -f ../build/serversocket.sk -w ../build/from,0 -R 0 -d erf -p -t 1000

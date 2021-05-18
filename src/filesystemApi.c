@@ -61,7 +61,7 @@ static FileNode_t* getVictim(CacheStorage_t* store, FileNode_t* spare) {
 
 // !!
 // todo remove `static` and add logging for `openFile`, `closeFile`, `removeFile`, `getVictim`, and in server.c for open connection and close connection
-static int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
+int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
     char eventBuf[EVENT_SLOT_SIZE];
     time_t current_time;
     struct tm* time_info;
@@ -517,6 +517,7 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
     if (!alreadyExists) {
         if (store->currFileNum == store->maxFileNum) {
             FileNode_t* victim = getVictim(store, NULL);
+            logEvent(store->logBuffer, "EVICTED", victim->pathname, 0, requestor, 0);
             destroyFile(store, victim, notifyList, true);
         }
         fPtr = allocFile(pathname);
@@ -532,6 +533,7 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
         }
 
         DIE_ON_NEG_ONE(pushFdToList(&(fPtr->openDescriptors), requestor));
+        logEvent(store->logBuffer, "OPEN", pathname, 0, requestor, 0);
 
         // nothing else will set `errno` from here on if everything is successful, so we can
         // omit error checking here as the return statement will check for errors
@@ -812,7 +814,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
 
         // make a single list with all the clients that need to be notified that a file they were blocked on doesn't exist (anymore)
         concatenateFdLists(notifyList, tmpList);
-        // todo log eviction of file
+        logEvent(store->logBuffer, "EVICTED", victim->pathname, 0, requestor, 0);
     }
 
     store->currStorageSize += newContentLen;
@@ -1075,6 +1077,7 @@ int closeFileHandler(CacheStorage_t* store, const char* pathname, const int requ
     // actual close operation
     // remove requestor from list of fd's that opened this file
     popNodeFromFdQueue(&(fptr->openDescriptors), requestor);
+    logEvent(store->logBuffer, "CLOSE", pathname, 0, requestor, 0);
     // end actual close operation
 
     // second critical section: we're done writing, we can wake up any pending readers and also release the lock over the store
@@ -1117,6 +1120,7 @@ int removeFileHandler(CacheStorage_t* store, const char* pathname, struct fdNode
         return -1;
     }
 
+    logEvent(store->logBuffer, "REMOVE", pathname, 0, requestor, 0);
     destroyFile(store, fptr, notifyList, true);
 
     DIE_ON_NZ(pthread_mutex_unlock(&(store->mutex)));

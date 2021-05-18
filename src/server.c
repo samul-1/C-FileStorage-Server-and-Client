@@ -33,7 +33,7 @@
 #define DFL_MAXSTORAGECAP 10000
 #define DFL_MAXFILECOUNT 100
 #define DFL_SOCKNAME "serversocket.sk"
-#define DFL_LOGFILENAME "logs.txt"
+#define DFL_LOGFILENAME "logs.json"
 #define DFL_SOCKETBACKLOG 10
 #define DFL_TASKBUFSIZE 2048
 #define DFL_LOGBUFSIZE 2048
@@ -163,7 +163,7 @@ volatile sig_atomic_t softExit = 0;
 volatile sig_atomic_t hardExit = 0;
 
 void exitSigHandler(int sig) {
-    // ! if sig == SIGINT || sig == SIGTSTP then hardexit = 1, if sig == SIGINT then softexit = 1
+    // ! if sig == SIGINT || sig == SIGTSTP then hardexit = 1, if sig == SIGHUP then softexit = 1
     if (sig == SIGINT || sig == SIGHUP) {
         softExit = 1;
     }
@@ -441,7 +441,6 @@ int main(int argc, char** argv) {
     }
     atexit(cleanup);
 
-
     ssize_t
         maxStorageCap,
         maxFileCount,
@@ -576,8 +575,11 @@ int main(int argc, char** argv) {
                         FD_SET(atol(pipebuf), &setsave);
                         fd_num = MAX(atol(pipebuf), fd_num);
                     }
-                    else if (softExit && GET_CLIENT_COUNT == 0) { // reding 0 from pipe means a client left
-                        goto cleanup; // using `goto` to break out of nested loops
+                    else {
+                        logEvent(store->logBuffer, "CLIENT_LEFT", "", 0, -1, 0);
+                        if (softExit && GET_CLIENT_COUNT == 0) { // reding 0 from pipe means a client left
+                            goto cleanup; // using `goto` to break out of nested loops
+                        }
                     }
                 }
                 else if (i == fd_socket) { // first request from a new client
@@ -594,6 +596,7 @@ int main(int argc, char** argv) {
                         printf("number of clients %zu\n", GET_CLIENT_COUNT);
 
                         fd_num = MAX(fd_communication, fd_num);
+                        logEvent(store->logBuffer, "NEW_CLIENT", "", 0, fd_communication, 0);
                     }
                 }
                 else { // new request from already connected client
@@ -629,7 +632,6 @@ cleanup:
     DIE_ON_NEG_ONE(close(w2mPipe[0]));
     DIE_ON_NEG_ONE(close(w2mPipe[1]));
 
-    // todo log stats too
     // we can access the thread without locking any mutex because we're the only thread left standing
     printf(
         STAT_MSG,

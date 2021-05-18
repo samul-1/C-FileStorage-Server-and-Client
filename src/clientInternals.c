@@ -20,7 +20,7 @@ static int _mkdir(const char* dir) {
     char tmp[256];
     char* p = NULL;
     size_t len;
-    //puts(dir);
+    printf("mkdir received %s\n", dir);
     snprintf(tmp, sizeof(tmp), "%s", dir);
     len = strlen(tmp);
     if (tmp[len - 1] == '/')
@@ -28,26 +28,41 @@ static int _mkdir(const char* dir) {
     for (p = tmp + 1; *p; p++)
         if (*p == '/') {
             *p = 0;
-            if (mkdir(tmp, S_IRWXU) == -1) {
-                if (errno == EEXIST) {
-                    continue;
-                }
+            printf("creating %s\n", tmp);
+            if (mkdir(tmp, S_IRWXU) == -1 && errno != EEXIST) {
                 return -1;
             };
             *p = '/';
         }
+    printf("out of the loop, creating %s\n", tmp);
     if (mkdir(tmp, S_IRWXU) == -1 && errno != EEXIST) {
         return -1;
     }
     return 0;
 }
 
+char* strremove(char* str, const char* sub) {
+    char* p, * q, * r;
+    if ((q = r = strstr(str, sub)) != NULL) {
+        size_t len = strlen(sub);
+        while ((r = strstr(p = r + len, sub)) != NULL) {
+            while (p < r)
+                *q++ = *p++;
+        }
+        while ((*q++ = *p++) != '\0')
+            continue;
+    }
+    return str;
+}
+
 int saveFileToDisk(char* filepath, char* filecontent, size_t filecontentsize) {
+    filepath = strremove(filepath, "../");
     // split file name from rest of path and recursively create the directories
     char* lastSlash = strrchr(filepath, '/');
     if (lastSlash) {
         *lastSlash = '\0';
         // just pass the directories without the filename
+        printf("passing to mkdir: %s\n", filepath);
         if (_mkdir(filepath) == -1) {
             int errnosave = errno;
             perror("mkdir");
@@ -61,6 +76,8 @@ int saveFileToDisk(char* filepath, char* filecontent, size_t filecontentsize) {
     // now save file to disk
     FILE* fp = fopen(filepath, "w+");
     if (fp == NULL) {
+        perror("fopen in savetodisk");
+        puts(filepath);
         return -1;
     }
     if (fwrite(filecontent, 1, filecontentsize, fp) <= 0) {

@@ -171,30 +171,19 @@ int smallrHandler(char* arg, char* dirname) {
     return 0;
 }
 
-int smallwHandler(char* arg, char* dirname) {
-    // todo make the optional argument n=0 instead of parsing just the number
-    long upTo = 0;
-    char* strtok_r_savePtr;
-    char* fromDir = strtok_r(arg, ",", &strtok_r_savePtr);
-
-    char* _upTo = strtok_r(NULL, ",", &strtok_r_savePtr);
-    if (isNumber(_upTo, &upTo) != 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
+int visitDirAndWrite(char* fromDir, char* dirname, size_t upTo) {
     DIR* targetDir = NULL; // ! warning "might be uninitialized"
     struct dirent* currFile;
 
     char* filePathname; // contains each file's path preceded by the directory name
     size_t fileCount = 0; // files processed so far
-
     if ((targetDir = opendir(fromDir)) == NULL) {
         return -1;
     }
 
     errno = 0;
     while ((currFile = readdir(targetDir)) && (!upTo || fileCount < upTo)) {
+        struct stat st;
         if (!currFile && errno) {
             return -1;
         }
@@ -209,36 +198,120 @@ int smallwHandler(char* arg, char* dirname) {
         strcat(filePathname, "/");
         strcat(filePathname, currFile->d_name);
 
-        if (openFile(filePathname, O_CREATE | O_LOCK) == -1) {
-            // `EBADE` means the request failed on the server-side, so we can just ignore it and continue to the next
-            // iteration; any other `errno` value means a system call failed and we need to propagate the error
-            if (errno != EBADE) {
-                perror("openFile");
-                free(filePathname);
-                return -1;
-            }
+        if (stat(filePathname, &st) == -1) {
+            perror("stat");
         }
-        else if (writeFile(filePathname, dirname) == -1) {
-            if (errno != EBADE) {
-                perror("writeFile");
-                free(filePathname);
-                return -1;
-            }
+
+        if (S_ISDIR(st.st_mode)) {
+            printf("%s is a dir!!!\n", filePathname);
+            visitDirAndWrite(filePathname, dirname, upTo - fileCount);
         }
-        else if (closeFile(filePathname) == -1) {
-            if (errno != EBADE) {
-                perror("closeFile");
-                free(filePathname);
-                return -1;
+        else
+        {
+            if (openFile(filePathname, O_CREATE | O_LOCK) == -1) {
+                // `EBADE` means the request failed on the server-side, so we can just ignore it and continue to the next
+                // iteration; any other `errno` value means a system call failed and we need to propagate the error
+                if (errno != EBADE) {
+                    perror("openFile");
+                    free(filePathname);
+                    return -1;
+                }
             }
+            else if (writeFile(filePathname, dirname) == -1) {
+                if (errno != EBADE) {
+                    perror("writeFile");
+                    free(filePathname);
+                    return -1;
+                }
+            }
+            else if (closeFile(filePathname) == -1) {
+                if (errno != EBADE) {
+                    perror("closeFile");
+                    free(filePathname);
+                    return -1;
+                }
+            }
+            free(filePathname);
+            fileCount += 1;
         }
-        free(filePathname);
-        fileCount += 1;
     }
     if (closedir(targetDir) == -1) {
         perror("closedir");
         return -1;
     }
+    return 0;
+}
+
+int smallwHandler(char* arg, char* dirname) {
+    // todo make the optional argument n=0 instead of parsing just the number
+    long upTo = 0;
+    char* strtok_r_savePtr;
+    char* fromDir = strtok_r(arg, ",", &strtok_r_savePtr);
+
+    char* _upTo = strtok_r(NULL, ",", &strtok_r_savePtr);
+    if (isNumber(_upTo, &upTo) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    visitDirAndWrite(fromDir, dirname, upTo);
+
+    // DIR* targetDir = NULL; // ! warning "might be uninitialized"
+    // struct dirent* currFile;
+
+    // char* filePathname; // contains each file's path preceded by the directory name
+    // size_t fileCount = 0; // files processed so far
+
+    // if ((targetDir = opendir(fromDir)) == NULL) {
+    //     return -1;
+    // }
+
+    // errno = 0;
+    // while ((currFile = readdir(targetDir)) && (!upTo || fileCount < upTo)) {
+    //     if (!currFile && errno) {
+    //         return -1;
+    //     }
+    //     // skip current and parent dirs
+    //     if (!strcmp(currFile->d_name, ".") || !strcmp(currFile->d_name, "..")) {
+    //         continue;
+    //     }
+    //     if ((filePathname = calloc(strlen(fromDir) + strlen(currFile->d_name) + 2, 1)) == NULL) {
+    //         return -1;
+    //     }
+    //     strcpy(filePathname, fromDir);
+    //     strcat(filePathname, "/");
+    //     strcat(filePathname, currFile->d_name);
+
+    //     if (openFile(filePathname, O_CREATE | O_LOCK) == -1) {
+    //         // `EBADE` means the request failed on the server-side, so we can just ignore it and continue to the next
+    //         // iteration; any other `errno` value means a system call failed and we need to propagate the error
+    //         if (errno != EBADE) {
+    //             perror("openFile");
+    //             free(filePathname);
+    //             return -1;
+    //         }
+    //     }
+    //     else if (writeFile(filePathname, dirname) == -1) {
+    //         if (errno != EBADE) {
+    //             perror("writeFile");
+    //             free(filePathname);
+    //             return -1;
+    //         }
+    //     }
+    //     else if (closeFile(filePathname) == -1) {
+    //         if (errno != EBADE) {
+    //             perror("closeFile");
+    //             free(filePathname);
+    //             return -1;
+    //         }
+    //     }
+    //     free(filePathname);
+    //     fileCount += 1;
+    // }
+    // if (closedir(targetDir) == -1) {
+    //     perror("closedir");
+    //     return -1;
+    // }
     return 0;
 }
 

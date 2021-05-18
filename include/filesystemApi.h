@@ -76,6 +76,7 @@ void freeFdList(struct fdNode* h);
 
 CacheStorage_t* allocStorage(const size_t maxFileNum, const size_t maxStorageSize, const short replacementAlgo);
 int destroyStorage(CacheStorage_t* store);
+int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize);
 
 int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, struct fdNode** notifyList, const int requestor);
 int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, size_t* size, const int requestor);
