@@ -20,7 +20,6 @@ static int _mkdir(const char* dir) {
     char tmp[256];
     char* p = NULL;
     size_t len;
-    printf("mkdir received %s\n", dir);
     snprintf(tmp, sizeof(tmp), "%s", dir);
     len = strlen(tmp);
     if (tmp[len - 1] == '/')
@@ -28,13 +27,11 @@ static int _mkdir(const char* dir) {
     for (p = tmp + 1; *p; p++)
         if (*p == '/') {
             *p = 0;
-            printf("creating %s\n", tmp);
             if (mkdir(tmp, S_IRWXU) == -1 && errno != EEXIST) {
                 return -1;
             };
             *p = '/';
         }
-    printf("out of the loop, creating %s\n", tmp);
     if (mkdir(tmp, S_IRWXU) == -1 && errno != EEXIST) {
         return -1;
     }
@@ -62,7 +59,6 @@ int saveFileToDisk(char* filepath, char* filecontent, size_t filecontentsize) {
     if (lastSlash) {
         *lastSlash = '\0';
         // just pass the directories without the filename
-        printf("passing to mkdir: %s\n", filepath);
         if (_mkdir(filepath) == -1) {
             int errnosave = errno;
             perror("mkdir");

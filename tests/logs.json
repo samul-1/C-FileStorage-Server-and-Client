@@ -1,0 +1,154 @@
+[
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625944459072,
+		"operationType": "NEW_CLIENT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/server",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/server",
+		"outcome": "OK",
+		"bytesProcessed": 140968
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/server",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/aaaaaa/file1.txt",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/aaaaaa/file1.txt",
+		"outcome": "OK",
+		"bytesProcessed": 22
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/aaaaaa/file1.txt",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file2.txt",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file2.txt",
+		"outcome": "OK",
+		"bytesProcessed": 22
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file2.txt",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file4.txt",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file4.txt",
+		"outcome": "OK",
+		"bytesProcessed": 5
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file4.txt",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file3.txt",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file3.txt",
+		"outcome": "OK",
+		"bytesProcessed": 22
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": 7,
+		"workerTid": 139625936062208,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/build/from/file3.txt",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "16:56:38",
+		"clientFd": -1,
+		"workerTid": 139625944459072,
+		"operationType": "CLIENT_LEFT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},

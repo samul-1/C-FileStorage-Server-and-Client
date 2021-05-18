@@ -127,7 +127,7 @@ int smallrHandler(char* arg, char* dirname) {
         char* outBuf = NULL;
         size_t fileSize = 0;
         if (openFile(currFile, O_NOFLAG) == -1) {
-            perror("open to read");
+            currFile = strtok_r(NULL, ",", &strtok_r_savePtr);
             continue;
         }
         // build `dirname/pathOfFile`
@@ -175,6 +175,8 @@ int visitDirAndWrite(char* fromDir, char* dirname, size_t upTo) {
     DIR* targetDir = NULL; // ! warning "might be uninitialized"
     struct dirent* currFile;
 
+    char realFilePath[PATH_MAX];
+
     char* filePathname; // contains each file's path preceded by the directory name
     size_t fileCount = 0; // files processed so far
     if ((targetDir = opendir(fromDir)) == NULL) {
@@ -203,12 +205,12 @@ int visitDirAndWrite(char* fromDir, char* dirname, size_t upTo) {
         }
 
         if (S_ISDIR(st.st_mode)) {
-            printf("%s is a dir!!!\n", filePathname);
             visitDirAndWrite(filePathname, dirname, upTo - fileCount);
         }
         else
         {
-            if (openFile(filePathname, O_CREATE | O_LOCK) == -1) {
+            realpath(filePathname, realFilePath);
+            if (openFile(realFilePath, O_CREATE | O_LOCK) == -1) {
                 // `EBADE` means the request failed on the server-side, so we can just ignore it and continue to the next
                 // iteration; any other `errno` value means a system call failed and we need to propagate the error
                 if (errno != EBADE) {
@@ -217,14 +219,14 @@ int visitDirAndWrite(char* fromDir, char* dirname, size_t upTo) {
                     return -1;
                 }
             }
-            else if (writeFile(filePathname, dirname) == -1) {
+            else if (writeFile(realFilePath, dirname) == -1) {
                 if (errno != EBADE) {
                     perror("writeFile");
                     free(filePathname);
                     return -1;
                 }
             }
-            else if (closeFile(filePathname) == -1) {
+            else if (closeFile(realFilePath) == -1) {
                 if (errno != EBADE) {
                     perror("closeFile");
                     free(filePathname);
@@ -254,65 +256,7 @@ int smallwHandler(char* arg, char* dirname) {
         return -1;
     }
 
-    visitDirAndWrite(fromDir, dirname, upTo);
-
-    // DIR* targetDir = NULL; // ! warning "might be uninitialized"
-    // struct dirent* currFile;
-
-    // char* filePathname; // contains each file's path preceded by the directory name
-    // size_t fileCount = 0; // files processed so far
-
-    // if ((targetDir = opendir(fromDir)) == NULL) {
-    //     return -1;
-    // }
-
-    // errno = 0;
-    // while ((currFile = readdir(targetDir)) && (!upTo || fileCount < upTo)) {
-    //     if (!currFile && errno) {
-    //         return -1;
-    //     }
-    //     // skip current and parent dirs
-    //     if (!strcmp(currFile->d_name, ".") || !strcmp(currFile->d_name, "..")) {
-    //         continue;
-    //     }
-    //     if ((filePathname = calloc(strlen(fromDir) + strlen(currFile->d_name) + 2, 1)) == NULL) {
-    //         return -1;
-    //     }
-    //     strcpy(filePathname, fromDir);
-    //     strcat(filePathname, "/");
-    //     strcat(filePathname, currFile->d_name);
-
-    //     if (openFile(filePathname, O_CREATE | O_LOCK) == -1) {
-    //         // `EBADE` means the request failed on the server-side, so we can just ignore it and continue to the next
-    //         // iteration; any other `errno` value means a system call failed and we need to propagate the error
-    //         if (errno != EBADE) {
-    //             perror("openFile");
-    //             free(filePathname);
-    //             return -1;
-    //         }
-    //     }
-    //     else if (writeFile(filePathname, dirname) == -1) {
-    //         if (errno != EBADE) {
-    //             perror("writeFile");
-    //             free(filePathname);
-    //             return -1;
-    //         }
-    //     }
-    //     else if (closeFile(filePathname) == -1) {
-    //         if (errno != EBADE) {
-    //             perror("closeFile");
-    //             free(filePathname);
-    //             return -1;
-    //         }
-    //     }
-    //     free(filePathname);
-    //     fileCount += 1;
-    // }
-    // if (closedir(targetDir) == -1) {
-    //     perror("closedir");
-    //     return -1;
-    // }
-    return 0;
+    return visitDirAndWrite(fromDir, dirname, upTo);
 }
 
 int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly) {
@@ -336,7 +280,9 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
                 skipNext = true;
             }
             if (!validateOnly) {
-                smallwHandler(cliCommandList->argument, dirname);
+                if (smallwHandler(cliCommandList->argument, dirname) == -1) {
+                    return -1;
+                }
             }
             break;
         case 'W':
@@ -358,7 +304,9 @@ int runCommands(CliOption* cliCommandList, long tBetweenReqs, bool validateOnly)
                 skipNext = true;
             }
             if (!validateOnly) {
-                smallrHandler(cliCommandList->argument, dirname);
+                if (smallrHandler(cliCommandList->argument, dirname) == -1) {
+                    return -1;
+                }
             }
             break;
         case 'R':
@@ -492,7 +440,7 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
     // now actually run the commands
-    runCommands(cliCommandList, tBetweenReqs, false);
+    runCommands(cliCommandList, tBetweenReqs, false); // we don't actually check errors; upon return we dealloc and close connection regardless
     deallocParser(cliCommandList);
 
     if (closeConnection(sockname) == -1) {
