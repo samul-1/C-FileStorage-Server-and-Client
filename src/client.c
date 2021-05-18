@@ -96,20 +96,24 @@ do {\
 do {\
     char* strtok_r_savePtr;\
     char* currFile = strtok_r(arg, ",", &strtok_r_savePtr);\
+    char realFilePath[PATH_MAX];\
     while (currFile) {\
-        if(openFile(currFile, openFlags) == -1) {\
+        if(realpath(currFile, realFilePath) == NULL) {\
+            perror("realpath");\
+        }\
+        else if(openFile(realFilePath, openFlags) == -1) {\
             if(errno != EBADE) {\
                 perror("openFile");\
                 return EXIT_FAILURE;\
             }\
         }\
-        else if (apiFunc(currFile, dirname) == -1) {\
+        else if (apiFunc(realFilePath, dirname) == -1) {\
             if(errno != EBADE) {\
                 perror(#apiFunc);\
                 return EXIT_FAILURE;\
             }\
         }\
-        else if(closeFile(currFile) == -1) {\
+        else if(closeFile(realFilePath) == -1) {\
             if(errno != EBADE) {\
                 perror("closeFile");\
                 return EXIT_FAILURE;\
@@ -172,7 +176,7 @@ int smallrHandler(char* arg, char* dirname) {
 }
 
 int visitDirAndWrite(char* fromDir, char* dirname, size_t upTo) {
-    DIR* targetDir = NULL; // ! warning "might be uninitialized"
+    DIR* targetDir = NULL;
     struct dirent* currFile;
 
     char realFilePath[PATH_MAX];
@@ -204,8 +208,12 @@ int visitDirAndWrite(char* fromDir, char* dirname, size_t upTo) {
             perror("stat");
         }
 
-        if (S_ISDIR(st.st_mode)) {
-            visitDirAndWrite(filePathname, dirname, upTo - fileCount);
+        if (S_ISDIR(st.st_mode)) { // recursively visit sub-directories
+            int recCount = visitDirAndWrite(filePathname, dirname, upTo - fileCount);
+            if (recCount == -1) {
+                return -1;
+            }
+            fileCount += recCount;
         }
         else
         {
@@ -241,7 +249,7 @@ int visitDirAndWrite(char* fromDir, char* dirname, size_t upTo) {
         perror("closedir");
         return -1;
     }
-    return 0;
+    return fileCount;
 }
 
 int smallwHandler(char* arg, char* dirname) {

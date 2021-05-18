@@ -50,13 +50,10 @@ ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLO
     DIE_ON_NULL((evictedBuf = calloc(METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->contentSize)+1, 1)));\
     snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+1, "%010ld%s%010ld", strlen(file->pathname), file->pathname, file->contentSize);\
     memcpy(evictedBuf+strlen(evictedBuf), file->content, file->contentSize);\
-    puts(evictedBuf);\
-    printf("writing %zu bytes\n", METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize);\
     DIE_ON_NEG_ONE(writen(fd, evictedBuf, (METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize)));\
     free(evictedBuf);
 
 #define SEND_RESPONSE_CODE(fd, code) \
-printf("SENDING CODE %d\n", code);\
 snprintf(codeBuf, RES_CODE_LEN + 1, "%d", code);\
 DIE_ON_NEG_ONE(write(fd, codeBuf, RES_CODE_LEN));
 
@@ -112,7 +109,6 @@ do { \
 while (notifyList) {\
     SEND_RESPONSE_CODE(notifyList->fd, notifyCode);\
     snprintf(pipeBuf, PIPE_BUF_LEN, "%04d", notifyList->fd);\
-    printf("notifying %s\n", pipeBuf);\
     DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, PIPE_BUF_LEN));\
     struct fdNode* tmpPtr = notifyList;\
     notifyList = notifyList->nextPtr;\
@@ -229,12 +225,9 @@ void* _startWorker(void* args) {
 
         // read request code
         DIE_ON_NEG_ONE((numRead = read(rdy_fd, requestCodeBuf, REQ_CODE_LEN)));
-        printf("%s ", requestCodeBuf);
 
         if (numRead) {
             long requestCode = atol(requestCodeBuf);
-            //printf("read %s - reqn %ld\n", requestCodeBuf, requestCode);
-
             // get request filepath from client
             if (requestCode != READ_N_FILES) {
                 recvLine1 = getRequestPayloadSegment(rdy_fd, NULL);
@@ -242,11 +235,10 @@ void* _startWorker(void* args) {
 
             switch (requestCode) {
             case OPEN_FILE:
-                printf("open %s\n", recvLine1);
                 DIE_ON_NEG_ONE(read(rdy_fd, flagBuf, 1));
                 long flags;
                 if (isNumber(flagBuf, &flags) != 0) { // not a valid flag
-                    puts("BAD FLAG");
+                    // puts("BAD FLAG");
                     SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
                 }
                 else {
@@ -262,7 +254,7 @@ void* _startWorker(void* args) {
                 }
                 break;
             case CLOSE_FILE:
-                puts("close");
+                // puts("close");
                 if (closeFileHandler(store, recvLine1, rdy_fd) == -1) {
                     HANDLE_REQ_ERROR(rdy_fd);
                 }
@@ -274,8 +266,7 @@ void* _startWorker(void* args) {
                 ;
                 char* outBuf;
                 size_t readSize;
-                puts("read");
-                printf("client wants to read %s\n", recvLine1);
+                // puts("read");
                 if (readFileHandler(store, recvLine1, (void**)&outBuf, &readSize, rdy_fd) == -1) {
                     HANDLE_REQ_ERROR(rdy_fd);
                 }
@@ -285,7 +276,7 @@ void* _startWorker(void* args) {
                     DIE_ON_NULL((sendLine = calloc(METADATA_SIZE + readSize + 1, 1)));
                     snprintf(sendLine, METADATA_SIZE + 1, "%010ld", readSize);
                     memcpy(sendLine + METADATA_SIZE, outBuf, readSize);
-                    puts(sendLine);
+                    // puts(sendLine);
                     DIE_ON_NEG_ONE(writen(rdy_fd, sendLine, METADATA_SIZE + readSize));
 
                     free(sendLine);
@@ -293,7 +284,7 @@ void* _startWorker(void* args) {
                 }
                 break;
             case READ_N_FILES:
-                puts("READ N FILE");
+                // puts("READ N FILE");
                 DIE_ON_NEG_ONE(read(rdy_fd, argBuf, METADATA_SIZE));
                 long upperLimit;
                 if (isNumber(argBuf, &upperLimit) != 0) { // not a valid flag
@@ -308,7 +299,7 @@ void* _startWorker(void* args) {
                 DIE_ON_NEG_ONE(writen(rdy_fd, NO_MORE_CONTENT, strlen(NO_MORE_CONTENT)));
                 break;
             case WRITE_FILE:
-                puts("write");
+                // puts("write");
                 // check that the last operation was `openFile` with `O_LOCK|O_CREATE`
                 if (!testFirstWrite(store, recvLine1, rdy_fd)) {
                     SEND_RESPONSE_CODE(rdy_fd, FORBIDDEN);
@@ -319,8 +310,9 @@ void* _startWorker(void* args) {
                 }
                 // the logic of the `writeFile` operation is the same as that of `appendToFile` minus the initial check
             case APPEND_TO_FILE:
-                puts("append");
+                // puts("append");
                 // get content to write/append
+                ;
                 size_t fileContentSize = 0;
                 recvLine2 = getRequestPayloadSegment(rdy_fd, &fileContentSize);
                 if (writeToFileHandler(store, recvLine1, recvLine2, fileContentSize, &notifyList, &evictedList, rdy_fd) == -1) {
@@ -334,7 +326,6 @@ void* _startWorker(void* args) {
                     char* evictedBuf;
                     // send evicted files to client
                     while (evictedList) {
-                        printf("EVICTING %s\n", evictedList->pathname);
                         FileNode_t* tmpPtr = evictedList;
                         SEND_EVICTED_FILE(rdy_fd, evictedList, evictedBuf);
                         evictedList = evictedList->nextPtr;
@@ -347,7 +338,7 @@ void* _startWorker(void* args) {
                 free(recvLine2);
                 break;
             case LOCK_FILE:
-                puts("lock");
+                // puts("lock");
                 ;
                 int outcome = lockFileHandler(store, recvLine1, rdy_fd);
                 if (outcome == -1) {
@@ -376,10 +367,10 @@ void* _startWorker(void* args) {
                         DIE_ON_NEG_ONE(write(pipeOut, pipeBuf, PIPE_BUF_LEN));
                     }
                 }
-                puts("unlock");
+                // puts("unlock");
                 break;
             case REMOVE_FILE:
-                puts("remove");
+                // puts("remove");
                 if (removeFileHandler(store, recvLine1, &notifyList, rdy_fd) == -1) {
                     HANDLE_REQ_ERROR(rdy_fd);
                 }
@@ -391,8 +382,7 @@ void* _startWorker(void* args) {
                 }
                 break;
             default:
-                puts("\nUNKNOWN");
-                printf("\n\n---\n- %ld\n- %s\n\n-----\n", requestCode, codeBuf);
+                // puts("\nUNKNOWN");
                 SEND_RESPONSE_CODE(rdy_fd, BAD_REQUEST);
             }
             // free the resources allocated to handle the request
@@ -405,7 +395,7 @@ void* _startWorker(void* args) {
             }
         }
         else {
-            puts("client left");
+            // puts("client left");
             // releases lock from all files the client had locked, and gets list of all clients that were 
             // "first in line" waiting to lock the file(s)
             DIE_ON_NEG_ONE(clientExitHandler(store, &notifyList, rdy_fd));
@@ -430,7 +420,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Usage: ./server pathToConfigFile\n");
         return EXIT_FAILURE;
     }
-    puts("starting server");
+    // puts("starting server");
     Parser* configParser;
     DIE_ON_NULL((configParser = parseFile(argv[1], "=")));
 
@@ -510,13 +500,12 @@ int main(int argc, char** argv) {
 
     strncpy(saddr.sun_path, sockname, UNIX_PATH_MAX);
     saddr.sun_family = AF_UNIX;
-    puts(sockname);
+    // puts(sockname);
     DIE_ON_NEG_ONE((fd_socket = socket(AF_UNIX, SOCK_STREAM, 0)));
     DIE_ON_NEG_ONE(bind(fd_socket, (struct sockaddr*)&saddr, sizeof saddr));
     DIE_ON_NEG_ONE(listen(fd_socket, MAX_CONN));
 
-    puts("listening");
-    printf("initial number of clients %zu\n", GET_CLIENT_COUNT);
+    // puts("listening");
 
     fd_num = MAX(fd_socket, fd_num);
 
@@ -568,7 +557,7 @@ int main(int argc, char** argv) {
 
                     //! remove after debug
                     if (atol(pipebuf) == 0) {
-                        printf("client exited: curr num of clients %zu\n", GET_CLIENT_COUNT);
+                        //printf("client exited: curr num of clients %zu\n", GET_CLIENT_COUNT);
                     }
                     //! ---
                     if (atol(pipebuf) != 0) {
@@ -583,17 +572,17 @@ int main(int argc, char** argv) {
                     }
                 }
                 else if (i == fd_socket) { // first request from a new client
-                    puts("new client connected");
+                    // puts("new client connected");
                     DIE_ON_NEG_ONE((fd_communication = accept(fd_socket, NULL, 0))); // accept incoming connection
 
                     if (softExit) { // reject connection immediately if we're soft exiting the server
                         DIE_ON_NEG_ONE(close(fd_communication));
-                        puts("rejected connection because we're soft exiting");
+                        // puts("rejected connection because we're soft exiting");
                     }
                     else {
                         FD_SET(fd_communication, &setsave);
                         updateClientCount(1);
-                        printf("number of clients %zu\n", GET_CLIENT_COUNT);
+                        //printf("number of clients %zu\n", GET_CLIENT_COUNT);
 
                         fd_num = MAX(fd_communication, fd_num);
                         logEvent(store->logBuffer, "NEW_CLIENT", "", 0, fd_communication, 0);
@@ -612,7 +601,7 @@ int main(int argc, char** argv) {
         }
     }
 cleanup:
-    puts("cleanup");
+    // puts("cleanup");
     ;
     // send termination message(s) to workers
     int term = 0;
