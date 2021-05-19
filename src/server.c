@@ -159,8 +159,7 @@ volatile sig_atomic_t softExit = 0;
 volatile sig_atomic_t hardExit = 0;
 
 void exitSigHandler(int sig) {
-    // ! if sig == SIGINT || sig == SIGTSTP then hardexit = 1, if sig == SIGHUP then softexit = 1
-    if (sig == SIGINT || sig == SIGHUP) {
+    if (sig == SIGHUP) {
         softExit = 1;
     }
     else
@@ -398,6 +397,7 @@ void* _startWorker(void* args) {
             // puts("client left");
             // releases lock from all files the client had locked, and gets list of all clients that were 
             // "first in line" waiting to lock the file(s)
+            close(rdy_fd);
             DIE_ON_NEG_ONE(clientExitHandler(store, &notifyList, rdy_fd));
             // if the client had locked one or more files, and any of them had other clients blocked waiting to acquire
             // the lock, notify them that the operation has been completed successfully (they acquired the lock)

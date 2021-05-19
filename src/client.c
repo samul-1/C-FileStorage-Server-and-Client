@@ -159,7 +159,7 @@ int smallrHandler(char* arg, char* dirname) {
                     return -1;
                 }
             }
-            else {
+            else if (PRINTS_ENABLED) {
                 fprintf(stdout, "Read files were thrown away. To store them, use -d.\n");
             }
             if (closeFile(currFile) == -1 && errno != EBADE) {

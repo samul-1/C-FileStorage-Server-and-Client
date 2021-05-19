@@ -5,7 +5,7 @@ MAXSTORAGECAP=1000000
 MAXFILECOUNT=2
 
 # number of worker threads
-WORKERPOOLSIZE=5
+WORKERPOOLSIZE=10
 
 # path to the socket file
 SOCKETFILENAME=serversocket.sk
