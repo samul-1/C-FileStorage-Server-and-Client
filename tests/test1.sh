@@ -1,8 +1,3 @@
-# ./../build/client -f serversocket.sk -w ../build/from,0 -R 0 -d to -p
-
-# writes a whole dir ../build/from and saves evicted to dir `evicted`
-# ./../build/client -f ../build/serversocket.sk -w ../build/from,0 -D evicted -p
-
 # get absolute path of current directory for the -r flag (files are saved on the server using their absolute path)
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 

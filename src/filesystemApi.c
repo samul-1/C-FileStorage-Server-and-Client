@@ -795,6 +795,12 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
 
     // actual write operation
     // ! here you would do the compression and do everything with the compressed size
+    /*
+    decompress file
+    append new content
+    compress
+    now you know the new size
+    */
     if (fptr->contentSize + newContentLen > store->maxStorageSize) {
         // file cannot be stored because it is too large
         errnosave = E2BIG;
@@ -823,6 +829,9 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     void* tmp = realloc(fptr->content, fptr->contentSize + newContentLen + 1); //? +1 needed with bin?
     if (tmp) {
         fptr->content = tmp;
+        // decompress file content
+        // do the memcpy
+        // compress again
         memcpy((fptr->content + fptr->contentSize), newContent, newContentLen);
         fptr->contentSize += newContentLen;
     }

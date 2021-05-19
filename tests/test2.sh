@@ -1,13 +1,15 @@
+GREEN='\033[1;32m'
+RESET_COLOR='\033[0m'
 # get absolute path of current directory for the -r flag (files are saved on the server using their absolute path)
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
 valgrind --leak-check=full ./../build/server config/test2config1.txt &
 SERVER_PID=$!
 export SERVER_PID
-bash -c 'sleep 5 && kill -1 ${SERVER_PID}' &
+bash -c 'sleep 3 && kill -1 ${SERVER_PID}' &
 TIMER_PID=$!
 
-echo "BATTERY 1 - USING LRU REPLACEMENT ALGORITHM"
+echo -e "${GREEN}BATTERY 1 - USING LRU REPLACEMENT ALGORITHM${RESET_COLOR}"
 echo ""
 
 # write `big1` which is just enough to be stored
@@ -35,10 +37,11 @@ sleep 2
 valgrind --leak-check=full ./../build/server config/test2config2.txt &
 SERVER_PID=$!
 export SERVER_PID
-bash -c 'sleep 5 && kill -1 ${SERVER_PID}' &
+bash -c 'sleep 3 && kill -1 ${SERVER_PID}' &
 TIMER_PID=$!
 
-echo "BATTERY 2 - USING LFU REPLACEMENT ALGORITHM"
+echo ""
+echo -e "${GREEN}BATTERY 2 - USING LFU REPLACEMENT ALGORITHM${RESET_COLOR}"
 echo ""
 
 ./../build/client -p -f serversocket.sk -W dummyFiles/bigfiles/big3,dummyFiles/bigfiles/big4
@@ -55,13 +58,14 @@ sleep 2
 # --------------------------------------------------------------------------------------
 
 
-valgrind --leak-check=full ./../build/server test2config2.txt &
+valgrind --leak-check=full ./../build/server config/test2config2.txt &
 SERVER_PID=$!
 export SERVER_PID
-bash -c 'sleep 5 && kill -1 ${SERVER_PID}' &
+bash -c 'sleep 3 && kill -1 ${SERVER_PID}' &
 TIMER_PID=$!
 
-echo "BATTERY 3 - MULTIPLE EVICTED FILES"
+echo ""
+echo -e "${GREEN}BATTERY 3 - MULTIPLE EVICTED FILES${RESET_COLOR}"
 echo ""
 
 ./../build/client -p -f serversocket.sk -W dummyFiles/bigfiles/big3,dummyFiles/bigfiles/big4
