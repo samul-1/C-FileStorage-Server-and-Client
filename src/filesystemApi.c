@@ -48,7 +48,7 @@ static FileNode_t* getVictim(CacheStorage_t* store, FileNode_t* spare) {
     if (store->replacementAlgo != FIFO_ALGO) {
         FileNode_t* currPtr = store->hPtr;
         while (currPtr) {
-            if (currPtr != spare && (*cmp_fns[store->replacementAlgo % 3])(currPtr, victim) > 0) {
+            if (currPtr != spare && (*cmp_fns[store->replacementAlgo])(currPtr, victim) > 0) {
                 victim = currPtr;
             }
             currPtr = currPtr->nextPtr;

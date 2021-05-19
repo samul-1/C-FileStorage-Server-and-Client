@@ -23,4 +23,4 @@ TASKBUFSIZE=2048
 LOGBUFFERSIZE=2048
 
 # algorithm to choose victim files in the storage: 0 = FIFO, 1 = LRU, 2 = LFU
-REPLACEMENTALGO=0
+REPLACEMENTALGO=1

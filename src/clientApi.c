@@ -39,7 +39,7 @@ const char* errMessages[] = {
 
 #define PRINT_IF_ENABLED(fd, op, filepath, msg) \
 if(PRINTS_ENABLED) {\
-    fprintf(fd, "%s '%s': %s", #op, filepath, msg);\
+    fprintf(fd, "[%d] %s '%s': %s", getpid(), #op, filepath, msg);\
 }
 
 #define PRINT_ERR_IF_ENABLED(op, filepath, errCode) \
