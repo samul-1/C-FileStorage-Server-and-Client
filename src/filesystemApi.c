@@ -18,6 +18,7 @@
 #include "../include/log.h"
 #include "../include/cacheFns.h"
 #include "../include/clientServerProtocol.h"
+#include "../include/rleCompression.h"
 
 #define MAX(a,b) (a) > (b) ? (a) : (b)
 
@@ -627,17 +628,22 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     // actual read operation
-    char* ret = malloc(fptr->contentSize + 1);
-    if (!ret) {
+    *buf = RLEdecompress(fptr->content, fptr->contentSize, fptr->uncompressedSize, 0);
+    if (*buf == NULL) {
         errnosave = ENOMEM;
     }
-    else {
-        memcpy(ret, fptr->content, fptr->contentSize);
-        //ret[fptr->contentSize] = '\0'; // ? necessary with bin?
+    *size = fptr->uncompressedSize;
+    // char* ret = malloc(fptr->contentSize + 1);
+    // if (!ret) {
+    //     errnosave = ENOMEM;
+    // }
+    // else {
+    //     memcpy(ret, fptr->content, fptr->contentSize);
+    //     //ret[fptr->contentSize] = '\0'; // ? necessary with bin?
 
-        *buf = ret;
-        *size = fptr->contentSize;
-    }
+    //     *buf = ret;
+    //     *size = fptr->contentSize;
+    // }
     // end actual read operation
 
     logEvent(store->logBuffer, "READ", pathname, errnosave, requestor, (errnosave ? 0 : fptr->contentSize));
@@ -700,7 +706,7 @@ int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, 
     FileNode_t* currPtr = store->hPtr;
 
     while (currPtr && (readCount != upperLimit || upperLimit <= 0)) {
-        size_t retNewSize = retCurrSize + currPtr->contentSize + strlen(currPtr->pathname) + 2 * METADATA_SIZE;
+        size_t retNewSize = retCurrSize + currPtr->uncompressedSize + strlen(currPtr->pathname) + 2 * METADATA_SIZE;
         if (retNewSize > retMaxSize) {
             void* tmp = realloc(ret, 2 * retNewSize);
             if (!tmp) {
@@ -714,10 +720,16 @@ int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, 
         sprintf(
             ret + retCurrSize,
             "%010ld%s%010ld",
-            strlen(currPtr->pathname), currPtr->pathname, currPtr->contentSize
+            strlen(currPtr->pathname), currPtr->pathname, currPtr->uncompressedSize
         );
-        memcpy((ret + retNewSize - (currPtr->contentSize)), currPtr->content, currPtr->contentSize);
+        char* uncompressedContent = RLEdecompress(currPtr->content, currPtr->contentSize, currPtr->uncompressedSize, 0);
+        if (uncompressedContent == NULL) {
+            errnosave = ENOMEM;
+            break;
+        }
+        memcpy((ret + retNewSize - (currPtr->uncompressedSize)), uncompressedContent, currPtr->uncompressedSize);
         retCurrSize = retNewSize;
+        free(uncompressedContent);
 
         currPtr = currPtr->nextPtr;
         readCount += 1;
@@ -794,20 +806,26 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
     DIE_ON_NZ(pthread_mutex_unlock(&(fptr->mutex)));
 
     // actual write operation
-    // ! here you would do the compression and do everything with the compressed size
-    /*
-    decompress file
-    append new content
-    compress
-    now you know the new size
-    */
-    if (fptr->contentSize + newContentLen > store->maxStorageSize) {
+
+    // get the decompress content and also allocate `newContentLen` extra bytes after it
+    char* decompressedContent = RLEdecompress(fptr->content, fptr->contentSize, fptr->uncompressedSize, newContentLen);
+
+    // now append new content to the buffer allocated by `RLEdecompress`
+    memcpy(decompressedContent + fptr->uncompressedSize, newContent, newContentLen);
+
+    // compress the file contaning the new content and find out what the final size is
+    size_t newCompressedSize = 0;
+    char* newCompressedContent = RLEcompress(decompressedContent, fptr->uncompressedSize + newContentLen, &newCompressedSize);
+    free(decompressedContent);
+
+    if (newCompressedSize > store->maxStorageSize) {
         // file cannot be stored because it is too large
         errnosave = E2BIG;
+        free(newCompressedContent);
         logEvent(store->logBuffer, "WRITE", pathname, errnosave, requestor, 0);
         goto cleanup;
     }
-    while (store->currStorageSize + newContentLen > store->maxStorageSize) {
+    while (store->currStorageSize - fptr->contentSize + newCompressedSize > store->maxStorageSize) {
         // we pass `fptr` as the second param to `getVictim` to prevent the file we're writing to from being chosen as the victim
         FileNode_t* victim = getVictim(store, fptr);
         assert(victim);
@@ -823,22 +841,15 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         logEvent(store->logBuffer, "EVICTED", victim->pathname, 0, requestor, 0);
     }
 
-    store->currStorageSize += newContentLen;
+    store->currStorageSize = store->currStorageSize - fptr->contentSize + newCompressedSize;
     store->maxReachedStorageSize = MAX(store->maxReachedStorageSize, store->currStorageSize);
 
-    void* tmp = realloc(fptr->content, fptr->contentSize + newContentLen + 1); //? +1 needed with bin?
-    if (tmp) {
-        fptr->content = tmp;
-        // decompress file content
-        // do the memcpy
-        // compress again
-        memcpy((fptr->content + fptr->contentSize), newContent, newContentLen);
-        fptr->contentSize += newContentLen;
-    }
-    else {
-        errnosave = ENOMEM;
-    }
-    // end actual write operation
+    // update file
+    free(fptr->content);
+    fptr->content = newCompressedContent;
+    fptr->uncompressedSize = fptr->uncompressedSize + newContentLen;
+    fptr->contentSize = newCompressedSize;
+
     logEvent(store->logBuffer, "WRITE", pathname, errnosave, requestor, (errnosave ? 0 : newContentLen));
     fptr->canDoFirstWrite = 0; // last operation on this file isn't `openFile` with `O_LOCK|O_CREATE` anymore because a successful operation was done on it
 

@@ -12,18 +12,16 @@ struct fdNode {
     int fd;
     struct fdNode* nextPtr;
 };
-
-
 typedef struct fileNode {
     char* pathname;
     char* content;
     size_t contentSize;
+    size_t uncompressedSize;
 
     int lockedBy; /*< 0 if unlocked */
     struct fdNode* pendingLocks_hPtr; /*< List of fd's that are waiting to acquire lock for this file */
     struct fdNode* openDescriptors; /*< List of fd's that have called `openFile` on this file */
 
-    bool open; // ! this will be deleted
     bool isBeingWritten;
     size_t activeReaders;
 

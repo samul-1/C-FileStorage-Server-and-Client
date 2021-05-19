@@ -1,0 +1,280 @@
+[
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 78096192,
+		"operationType": "NEW_CLIENT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file1",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file1",
+		"outcome": "OK",
+		"bytesProcessed": 376
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file1",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file2",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file2",
+		"outcome": "OK",
+		"bytesProcessed": 141536
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file2",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "READ",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file1",
+		"outcome": "OK",
+		"bytesProcessed": 376
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file1",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "READ",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file2",
+		"outcome": "OK",
+		"bytesProcessed": 137915
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 7,
+		"workerTid": 99084032,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file2",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": -1,
+		"workerTid": 78096192,
+		"operationType": "CLIENT_LEFT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 8,
+		"workerTid": 78096192,
+		"operationType": "NEW_CLIENT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 8,
+		"workerTid": 99084032,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/rec/rec1",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 8,
+		"workerTid": 99084032,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/rec/rec1",
+		"outcome": "OK",
+		"bytesProcessed": 123344
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 8,
+		"workerTid": 99084032,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/rec/rec1",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 8,
+		"workerTid": 99084032,
+		"operationType": "OPEN",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/rec/rec2",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 8,
+		"workerTid": 99084032,
+		"operationType": "WRITE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/rec/rec2",
+		"outcome": "OK",
+		"bytesProcessed": 115832
+	},
+	{
+		"timestamp": "11:13:22",
+		"clientFd": 8,
+		"workerTid": 99084032,
+		"operationType": "CLOSE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/rec/rec2",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": -1,
+		"workerTid": 78096192,
+		"operationType": "CLIENT_LEFT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": 9,
+		"workerTid": 78096192,
+		"operationType": "NEW_CLIENT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": 9,
+		"workerTid": 99084032,
+		"operationType": "LOCK",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file1",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": 9,
+		"workerTid": 99084032,
+		"operationType": "REMOVE",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file1",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": -1,
+		"workerTid": 78096192,
+		"operationType": "CLIENT_LEFT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": 10,
+		"workerTid": 78096192,
+		"operationType": "NEW_CLIENT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": 11,
+		"workerTid": 78096192,
+		"operationType": "NEW_CLIENT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": 10,
+		"workerTid": 99084032,
+		"operationType": "LOCK",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file2",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:23",
+		"clientFd": 11,
+		"workerTid": 99084032,
+		"operationType": "LOCK",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file2",
+		"outcome": "client put on wait (code -2)"
+	},
+	{
+		"timestamp": "11:13:24",
+		"clientFd": 10,
+		"workerTid": 99084032,
+		"operationType": "UNLOCK",
+		"filePath": "/home/samuele/Desktop/progetto/tests/dummyFiles/file2",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:24",
+		"clientFd": -1,
+		"workerTid": 78096192,
+		"operationType": "CLIENT_LEFT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+	{
+		"timestamp": "11:13:25",
+		"clientFd": -1,
+		"workerTid": 78096192,
+		"operationType": "CLIENT_LEFT",
+		"filePath": "",
+		"outcome": "OK",
+		"bytesProcessed": 0
+	},
+]

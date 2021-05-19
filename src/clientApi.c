@@ -95,7 +95,7 @@ static int storeFiles(const char* dirname) {
 
 
         // read path of the file
-        DIE_ON_NEG_ONE(readn(SOCKET_FD, filepathBuf + strlen(dirname) + 1, filepathLen));
+        DIE_ON_NEG_ONE(readn(SOCKET_FD, filepathBuf + (dirname ? strlen(dirname) : 0) + 1, filepathLen));
 
         if (dirname) {
             // prepend the argument `dirname` + /

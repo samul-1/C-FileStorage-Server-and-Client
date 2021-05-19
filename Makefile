@@ -11,7 +11,7 @@ BIN = server dummyclient2 dummyclient client
 BINDIR = build
 
 # Object files from which $BIN depends
-OBJS = obj/filesystemApi.o obj/log.o obj/boundedbuffer.o obj/cacheFns.o obj/icl_hash.o obj/fileparser.o obj/clientApi.o obj/cliParser.o obj/clientInternals.o
+OBJS = obj/filesystemApi.o obj/log.o obj/boundedbuffer.o obj/cacheFns.o obj/icl_hash.o obj/fileparser.o obj/clientApi.o obj/cliParser.o obj/clientInternals.o obj/rleCompression.o
 
 # Path of Object files
 OBJDIR = obj
