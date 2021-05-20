@@ -18,4 +18,4 @@ int fifo_cmp(const void* f1, const void* f2) {
     return ((FileNode_t*)f2)->insertionTime - ((FileNode_t*)f1)->insertionTime;
 }
 
-(*cmp_fns[3])(void* f1, void* f2) = { fifo_cmp, lru_cmp, lfu_cmp };
+int (*cmp_fns[3])(const void* f1, const void* f2) = { fifo_cmp, lru_cmp, lfu_cmp };

@@ -7,11 +7,12 @@ CFLAGS = -Wall -g -std=c99 -pthread -Wno-missing-braces
 
 
 # The final executable program file, i.e. name of our program
-BIN = server dummyclient2 dummyclient client
+#BIN = server dummyclient2 dummyclient client
 BINDIR = build
 
-# Object files from which $BIN depends
-OBJS = obj/filesystemApi.o obj/log.o obj/boundedbuffer.o obj/cacheFns.o obj/icl_hash.o obj/fileparser.o obj/clientApi.o obj/cliParser.o obj/clientInternals.o obj/rleCompression.o
+# Object files from which $BIN depend
+OBJSCLIENT = obj/clientApi.o obj/cliParser.o obj/clientInternals.o
+OBJSSERVER = obj/filesystemApi.o obj/log.o obj/boundedbuffer.o obj/cacheFns.o obj/icl_hash.o obj/fileparser.o obj/rleCompression.o
 
 # Path of Object files
 OBJDIR = obj
@@ -23,7 +24,16 @@ LIBS = -lpthread -lm
 
 .PHONY: all clean
 
-all:	$(BIN)
+all:	server client clientTest3
+
+server: $(SRCDIR)/$< $(OBJSSERVER)
+	$(CC) $(CFLAGS) $(OBJSSERVER) $(SRCDIR)/$@.c $(LIBS) -o $(BINDIR)/$@
+
+client: $(SRCDIR)/$< $(OBJSCLIENT)
+	$(CC) $(CFLAGS) $(OBJSCLIENT) $(SRCDIR)/$@.c $(LIBS) -o $(BINDIR)/$@
+
+clientTest3: $(SRCDIR)/$< $(OBJSCLIENT)
+	$(CC) $(CFLAGS) $(OBJSCLIENT) $(SRCDIR)/client.c $(LIBS) -o $(BINDIR)/$@
 
 # This default rule compiles the executable program
 $(BIN): $(SRCDIR)/$< $(OBJS)

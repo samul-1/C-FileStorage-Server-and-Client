@@ -17,6 +17,6 @@ int lfu_cmp(const void* f1, const void* f2);
 
 int fifo_cmp(const void* f1, const void* f2);
 
-extern int (*cmp_fns[3])(void* f1, void* f2);
+extern int (*cmp_fns[3])(const void* f1, const void* f2);
 
 #endif
