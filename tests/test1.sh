@@ -25,6 +25,6 @@ echo "Trying to lock the file, but having to wait..."
 ./../build/client -p -t 0 -f serversocket.sk -l ${SCRIPTPATH}/dummyFiles/file2
 
 wait $TIMER_PID
-
+wait $SERVER_PID
 
 exit 0

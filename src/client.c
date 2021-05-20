@@ -25,26 +25,14 @@
 char* realpath(const char* restrict path,
     char* restrict resolved_path);
 
-// #include "../include/clientApi.h"
 
-/**
- * Supported flags:
- *
- * -h (help)
- * -f filename (set socket name)
- * -w dirname [,n=0] (send files in `dirname`, up to `n`, or all files in the directory)
- * -W file1 [,file2] (send file1, ..., fileN)
- * -D dirname (set `dirname` as target for files sent from server in response to -w/-W)
- * -r file1 [,file2] (send read request for file1, ..., fileN)
- * -R [n=0] (send read request for `n` files, or all files on the server)
- * -d dirname (set `dirname` as target for files sent from server in response to -r/-R)
- * -t time (set time interval in between requests)
- * -l file1 [,file2] (send lock request for file1, ..., fileN)
- * -u file1 [,file2] (send unlock request for file1, ..., fileN)
- * -c file1 [,file2] (send delete request for file1, ..., fileN)
- * -p (enable prints for info and errors)
- *
- */
+#define USAGE_MSG "-h (help)\n-f filename (set socket name)\n-w dirname [,n=0] (send files in `dirname`,"\
+" up to `n`, or all files in the directory)\n-W file1 [,file2] (send file1, ..., fileN)\n-D dirname (set `dirname`"\
+" as target for files sent from server in response to -w/-W)\n-r file1 [,file2] (send read request for file1,"\
+" ..., fileN)\n-R [n=0] (send read request for `n` files, or all files on the server)\n-d dirname (set `dirname` as target"\
+" for files sent from server in response to -r/-R)\n-t time (set time interval in between requests)\n-l file1 [,file2] ("\
+"send lock request for file1, ..., fileN)\n-u file1 [,file2] (send unlock request for file1, ..., fileN)\n-c file1 [,file2] "\
+"(send delete request for file1, ..., fileN)\n-p (enable prints for info and errors)\n"
 
 #define TOO_MANY_P_MSG "You can only enable prints once.\n"
 #define TOO_MANY_T_MSG "You can only set -t once.\n"
@@ -56,7 +44,6 @@ char* realpath(const char* restrict path,
 #define ARG_NO_NUM "The argument of -%c option must be a number.\n"
 #define NO_F_MSG "You must specify a name for the socket with -f.\n"
 #define UNKNOWN_ARG_MSG "Unknown option -%c.\n"
-#define USAGE_MSG "usage"
 
 #define MAX_SOCKETPATH_LEN 1024
 #define MAX_ARG_OPT_LEN 1024
@@ -74,7 +61,6 @@ if(!o->argument) { \
     DEALLOC_AND_FAIL;\
 }
 
-;
 // splits the given comma-separated argument and makes an API call for each of the token arguments
 #define MULTIARG_API_WRAPPER(apiFunc, arg) \
 do {\
@@ -253,7 +239,6 @@ int visitDirAndWrite(char* fromDir, char* dirname, size_t upTo) {
 }
 
 int smallwHandler(char* arg, char* dirname) {
-    // todo make the optional argument n=0 instead of parsing just the number
     long upTo = 0;
     char* strtok_r_savePtr;
     char* fromDir = strtok_r(arg, ",", &strtok_r_savePtr);

@@ -325,7 +325,6 @@ int writeFile(const char* pathname, const char* dirname) {
         return -1;
     }
 
-    // todo investigate whether the +1 at the end of length is needed
     // construct request message
     snprintf(req, reqLen + 1, "%d%010ld%s%010ld", WRITE_FILE, pathnameLen, pathname, filecontentLen);
     // append file content to request
@@ -363,7 +362,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     }
 
     size_t pathnameLen = strlen(pathname);
-    size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + size + 1; // ? +1 with binary?
+    size_t reqLen = REQ_CODE_LEN + METADATA_SIZE + pathnameLen + METADATA_SIZE + size + 1;
     char* req = calloc(reqLen, 1);
     if (!req) {
         return -1;

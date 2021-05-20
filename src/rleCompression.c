@@ -27,8 +27,6 @@ char* RLEcompress(char* data, size_t origSize, size_t* compressedSize) {
             retSize += 3;
         }
 
-        //char tmp[2];
-
         ret[retIdx++] = data[inIdx];
         retSize += 1;
         if (tmpCount > 1) {
@@ -36,7 +34,6 @@ char* RLEcompress(char* data, size_t origSize, size_t* compressedSize) {
             // is in fact the # of consecutive occurrences of this char)
             ret[retIdx++] = data[inIdx];
             // convert single-digit count to dataing
-            //snprintf(tmp, 2, "%ld", tmpCount);
             ret[retIdx++] = '0' + tmpCount;
             retSize += 2;
         }

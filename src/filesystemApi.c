@@ -60,8 +60,6 @@ static FileNode_t* getVictim(CacheStorage_t* store, FileNode_t* spare) {
 
 }
 
-// !!
-// todo remove `static` and add logging for `openFile`, `closeFile`, `removeFile`, `getVictim`, and in server.c for open connection and close connection
 int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
     char eventBuf[EVENT_SLOT_SIZE];
     time_t current_time;
@@ -633,17 +631,6 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
         errnosave = ENOMEM;
     }
     *size = fptr->uncompressedSize;
-    // char* ret = malloc(fptr->contentSize + 1);
-    // if (!ret) {
-    //     errnosave = ENOMEM;
-    // }
-    // else {
-    //     memcpy(ret, fptr->content, fptr->contentSize);
-    //     //ret[fptr->contentSize] = '\0'; // ? necessary with bin?
-
-    //     *buf = ret;
-    //     *size = fptr->contentSize;
-    // }
     // end actual read operation
 
     logEvent(store->logBuffer, "READ", pathname, errnosave, requestor, (errnosave ? 0 : fptr->contentSize));
@@ -980,6 +967,8 @@ int clientExitHandler(CacheStorage_t* store, struct fdNode** notifyList, const i
 
         // if client was blocked on a file waiting to lock it, remove it from the waiting list
         popNodeFromFdQueue(&(currPtr->pendingLocks_hPtr), requestor);
+        // remove client from list of fd's who opened this file
+        popNodeFromFdQueue(&(currPtr->openDescriptors), requestor);
 
         DIE_ON_NZ(pthread_mutex_unlock(&(currPtr->ordering)));
         DIE_ON_NZ(pthread_mutex_unlock(&(currPtr->mutex)));
@@ -1037,7 +1026,7 @@ int unlockFileHandler(CacheStorage_t* store, const char* pathname, int* newLockF
         int newLock = popNodeFromFdQueue(&(fptr->pendingLocks_hPtr), -1);
 
         // communicate new lock's fd back to caller
-        *newLockFd = newLock; //? write log event LOCK for new lock
+        *newLockFd = newLock;
 
         fptr->lockedBy = newLock;
         fptr->canDoFirstWrite = 0; // last operation on this file isn't `openFile` with `O_LOCK|O_CREATE` anymore because a successful operation was done on it
