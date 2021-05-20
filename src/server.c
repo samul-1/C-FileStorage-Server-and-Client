@@ -291,7 +291,7 @@ void* _startWorker(void* args) {
                 }
                 char* res;
                 size_t resSize;
-                readNFilesHandler(store, upperLimit, (void**)&res, &resSize);
+                readNFilesHandler(store, upperLimit, (void**)&res, &resSize, rdy_fd);
                 SEND_RESPONSE_CODE(rdy_fd, OK);
                 DIE_ON_NEG_ONE(writen(rdy_fd, res, resSize));
                 free(res);

@@ -22,7 +22,7 @@ HEADDIR = include
 # Libraries
 LIBS = -lpthread -lm
 
-.PHONY: all clean
+.PHONY: all clean cleanall
 
 all:	server client clientTest3
 
@@ -46,3 +46,6 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.c $(HEADDIR)/%.h
 
 clean:
 	rm -f *~ $(OBJDIR)/*.o $(BINDIR)/*
+
+cleanall:
+	rm -f *~ $(OBJDIR)/*.o $(BINDIR)/* -r tests/evicted1 -r tests/evicted2 -r tests/evicted3 -r tests/test1dest1 -r tests/test1dest2 -r tests/test3dest1 -r tests/test3dest2

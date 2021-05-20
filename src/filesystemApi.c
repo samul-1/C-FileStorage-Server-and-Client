@@ -653,7 +653,7 @@ int readFileHandler(CacheStorage_t* store, const char* pathname, void** buf, siz
     return errno ? -1 : 0;
 }
 
-int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, size_t* size) {
+int readNFilesHandler(CacheStorage_t* store, const long upperLimit, void** buf, size_t* size, const int requestor) {
     /**
      * @brief Handles read-n-files requests from client.
      *
@@ -728,6 +728,7 @@ cleanup:
     *buf = ret;
     *size = retCurrSize;
 
+    logEvent(store->logBuffer, "READ", "READ_N_FILES", errnosave, requestor, retCurrSize);
     errno = errnosave ? errnosave : errno;
     return errno ? -1 : readCount;
 }
@@ -826,6 +827,13 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         // make a single list with all the clients that need to be notified that a file they were blocked on doesn't exist (anymore)
         concatenateFdLists(notifyList, tmpList);
         logEvent(store->logBuffer, "EVICTED", victim->pathname, 0, requestor, 0);
+    }
+
+    // reset ref count for LFU algorithm after evicting victims
+    FileNode_t* tmpPtr = store->hPtr;
+    while (tmpPtr) {
+        tmpPtr->refCount = 0;
+        tmpPtr = tmpPtr->nextPtr;
     }
 
     store->currStorageSize = store->currStorageSize - fptr->contentSize + newCompressedSize;
