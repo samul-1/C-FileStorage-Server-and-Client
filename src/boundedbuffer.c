@@ -128,7 +128,7 @@ int dequeue(BoundedBuffer* buf, void* dest, size_t destSize) {
     * `EINVAL`: invalid parameter(s) were passed
     */
 
-    if (!buf || (!dest && destSize <= 0)) {
+    if (!buf || (dest && destSize <= 0)) {
         // NULL can be passed as dest if we just want to pop the element without saving it; however
         // if we want to save it somewhere, destSize must be greater than 0 bytes
         errno = EINVAL;
