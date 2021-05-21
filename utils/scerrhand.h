@@ -30,7 +30,7 @@
 
 #define DIE_ON_NEG_ONE(v)\
     do {\
-        if(v == -1) {\
+        if(v == -1 && errno != EINTR) {\
             perror(#v);\
             exit(EXIT_FAILURE);\
         }\

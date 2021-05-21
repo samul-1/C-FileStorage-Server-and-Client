@@ -8,6 +8,9 @@
  */
 
 
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#include <time.h>
 #include "../utils/scerrhand.h"
 #include <errno.h>
 #include <assert.h>
@@ -63,14 +66,13 @@ static FileNode_t* getVictim(CacheStorage_t* store, FileNode_t* spare) {
 int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize) {
     char eventBuf[EVENT_SLOT_SIZE];
     time_t current_time;
-    struct tm* time_info;
+    struct tm time_info;
+    memset(&time_info, 0, sizeof time_info);
     char timeString[9];  // space for "HH:MM:SS\0"
 
     time(&current_time);
-    // ! not re-entrant: fix with localtime_r
-    time_info = localtime(&current_time);
-    // ! investigate this too: asctime_r? is `time` re-entrant?
-    strftime(timeString, sizeof(timeString), "%H:%M:%S", time_info);
+    localtime_r(&current_time, &time_info);
+    strftime(timeString, sizeof(timeString), "%H:%M:%S", &time_info);
 
     sprintf(
         eventBuf, "\t{\n\t\t\"timestamp\": \"%s\",\n\t\t\"clientFd\": %d,\n\t\t\"workerTid\": %ld,\n\t\t\"operationType\": \"%s\",\n\t\t\"filePath\": \"%s\",",

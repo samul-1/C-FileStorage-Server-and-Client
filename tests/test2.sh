@@ -3,7 +3,7 @@ RESET_COLOR='\033[0m'
 # get absolute path of current directory for the -r flag (files are saved on the server using their absolute path)
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
-valgrind --leak-check=full build/server tests/config/test2config1.txt &
+build/server tests/config/test2config1.txt &
 SERVER_PID=$!
 export SERVER_PID
 bash -c 'sleep 3 && kill -1 ${SERVER_PID}' &
@@ -33,7 +33,7 @@ sleep 2
 # --------------------------------------------------------------------------------------
 
 
-valgrind --leak-check=full build/server tests/config/test2config2.txt &
+build/server tests/config/test2config2.txt &
 SERVER_PID=$!
 export SERVER_PID
 bash -c 'sleep 3 && kill -1 ${SERVER_PID}' &
@@ -64,10 +64,10 @@ wait $TIMER_PID
 sleep 2
 
 
-# # --------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
 
 
-valgrind --leak-check=full build/server tests/config/test2config2.txt &
+build/server tests/config/test2config2.txt &
 SERVER_PID=$!
 export SERVER_PID
 bash -c 'sleep 3 && kill -1 ${SERVER_PID}' &
