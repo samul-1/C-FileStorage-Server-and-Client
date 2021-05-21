@@ -24,7 +24,7 @@ LIBS = -lpthread -lm
 
 .PHONY: all clean cleanall test1 test2 test3
 
-all:	server client clientTest3
+all:	server client
 
 server: $(SRCDIR)/$< $(OBJSSERVER)
 	$(CC) $(CFLAGS) $(OBJSSERVER) $(SRCDIR)/$@.c $(LIBS) -o $(BINDIR)/$@
@@ -34,10 +34,6 @@ client: $(SRCDIR)/$< $(OBJSCLIENT)
 
 clientTest3: $(SRCDIR)/$< $(OBJSCLIENT)
 	$(CC) $(CFLAGS) $(OBJSCLIENT) $(SRCDIR)/client.c $(LIBS) -o $(BINDIR)/$@
-
-# This default rule compiles the executable program
-$(BIN): $(SRCDIR)/$< $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) $(SRCDIR)/$@.c $(LIBS) -o $(BINDIR)/$@
 
 # This rule compiles each module into its object file
 $(OBJDIR)/%.o: $(SRCDIR)/%.c $(HEADDIR)/%.h

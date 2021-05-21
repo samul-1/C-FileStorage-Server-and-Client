@@ -434,7 +434,6 @@ void printFileptr(FileNode_t* f) {
 }
 
 void printStore(const CacheStorage_t* store) {
-    printf("curr # files: %zu\n curr storage size: %zu\n Files: \n", store->currFileNum, store->currStorageSize);
     FileNode_t* currptr = store->hPtr;
     while (currptr) {
         puts(currptr->pathname);

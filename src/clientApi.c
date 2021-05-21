@@ -37,9 +37,15 @@ const char* errMessages[] = {
 
 #define INITIAL_REQ_SIZ 1024
 
+// todo print processed bytes too
 #define PRINT_IF_ENABLED(fd, op, filepath, msg) \
 if(PRINTS_ENABLED) {\
     fprintf(fd, "[%d] %s '%s': %s", getpid(), #op, filepath, msg);\
+}
+
+#define PRINT_PROCESSED_SIZE_IF_ENABLED(sz, action) \
+if(PRINTS_ENABLED) {\
+    fprintf(stdout, "%ld bytes %s.\n", sz, #action);\
 }
 
 #define PRINT_ERR_IF_ENABLED(op, filepath, errCode) \
@@ -124,7 +130,7 @@ static int storeFiles(const char* dirname) {
     return count;
 }
 
-
+// todo document errno values
 int openConnection(const char* sockname, int msec, const struct timespec abstime) {
     struct sockaddr_un sockaddr;
     strncpy(sockaddr.sun_path, sockname, UNIX_PATH_MAX);
@@ -221,7 +227,7 @@ int readNFiles(int N, const char* dirname) {
             (dirname ? "" : " (to store them, use -d)")
         );
     }
-    return 0;
+    return stored;
 }
 
 int readFile(const char* pathname, void** buf, size_t* size) {
@@ -270,6 +276,7 @@ int readFile(const char* pathname, void** buf, size_t* size) {
     if (readn(SOCKET_FD, recvLine3, responseSize) == -1) { // read the actual content of the file
         return -1;
     }
+    PRINT_PROCESSED_SIZE_IF_ENABLED(responseSize, read);
 
     *size = responseSize;
     *buf = recvLine3;
@@ -344,6 +351,8 @@ int writeFile(const char* pathname, const char* dirname) {
     char recvLine[RES_CODE_LEN + 1] = "";
 
     WAIT_FOR_RESPONSE(recvLine, Write, pathname);
+    PRINT_PROCESSED_SIZE_IF_ENABLED(filecontentLen, written);
+
     int stored = storeFiles(dirname);
     if (stored == -1) {
         return -1;
@@ -380,6 +389,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     char recvLine[RES_CODE_LEN + 1] = "";
 
     WAIT_FOR_RESPONSE(recvLine, Append, pathname);
+    PRINT_PROCESSED_SIZE_IF_ENABLED(size, appended);
 
     int stored = storeFiles(dirname);
     if (stored == -1) {

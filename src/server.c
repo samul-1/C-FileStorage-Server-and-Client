@@ -44,7 +44,9 @@ ANSI_COLOR_BG_GREEN "       " ANSI_COLOR_RESET " Statistics: " ANSI_COLOR_BG_GRE
 ANSI_COLOR_CYAN "Max number of files reached: " ANSI_COLOR_RESET "%zu\n" \
 ANSI_COLOR_CYAN "Max total storage size reached: " ANSI_COLOR_RESET "%zu bytes\n" \
 ANSI_COLOR_CYAN "Number of files that have been evicted from the cache: " ANSI_COLOR_RESET "%zu\n" \
-ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLOR_RESET "%zu\n"
+ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLOR_RESET "%zu\n" \
+ANSI_COLOR_CYAN "Files in the storage at the time of exit: " ANSI_COLOR_RESET "\n" \
+
 
 #define SEND_EVICTED_FILE(fd, file, evictedBuf) \
     DIE_ON_NULL((evictedBuf = calloc(METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->contentSize)+1, 1)));\
@@ -397,8 +399,9 @@ void* _startWorker(void* args) {
             // puts("client left");
             // releases lock from all files the client had locked, and gets list of all clients that were 
             // "first in line" waiting to lock the file(s)
-            close(rdy_fd);
             DIE_ON_NEG_ONE(clientExitHandler(store, &notifyList, rdy_fd));
+            close(rdy_fd);
+
             // if the client had locked one or more files, and any of them had other clients blocked waiting to acquire
             // the lock, notify them that the operation has been completed successfully (they acquired the lock)
             NOTIFY_PENDING_CLIENTS(notifyList, OK, pipeBuf, pipeOut);
@@ -464,7 +467,7 @@ int main(int argc, char** argv) {
     sigemptyset(&handlerMask);
     sigaddset(&handlerMask, SIGINT);
     sigaddset(&handlerMask, SIGHUP);
-    sigaddset(&handlerMask, SIGTSTP);
+    sigaddset(&handlerMask, SIGQUIT);
     /*     // block signals while we're installing handler
         DIE_ON_NEG_ONE(sigprocmask(SIG_BLOCK, &handlerMask, &oldMask));
      */
@@ -472,7 +475,7 @@ int main(int argc, char** argv) {
 
     DIE_ON_NEG_ONE(sigaction(SIGINT, &sig_handler, NULL));
     DIE_ON_NEG_ONE(sigaction(SIGHUP, &sig_handler, NULL));
-    DIE_ON_NEG_ONE(sigaction(SIGTSTP, &sig_handler, NULL));
+    DIE_ON_NEG_ONE(sigaction(SIGQUIT, &sig_handler, NULL));
 
     BoundedBuffer* taskBuffer; // used by manager thread to pass incoming requests to workers
     CacheStorage_t* store; // in-memory file storage system
@@ -629,6 +632,7 @@ cleanup:
         store->numVictims,
         store->currFileNum
     );
+    printStore(store);
 
     // release resources on the heap
     destroyBoundedBuffer(taskBuffer);
