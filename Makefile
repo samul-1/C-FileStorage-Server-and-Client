@@ -1,5 +1,5 @@
 # Makefile
-
+SHELL := /bin/bash
 CC = gcc
 
 # Compiler flags: all warnings + debugger meta-data
@@ -22,7 +22,7 @@ HEADDIR = include
 # Libraries
 LIBS = -lpthread -lm
 
-.PHONY: all clean cleanall
+.PHONY: all clean cleanall test1 test2 test3
 
 all:	server client clientTest3
 
@@ -43,9 +43,19 @@ $(BIN): $(SRCDIR)/$< $(OBJS)
 $(OBJDIR)/%.o: $(SRCDIR)/%.c $(HEADDIR)/%.h
 	$(CC) -c $(CFLAGS) $< -o $@ $(LIBS)
 
+test1: server client
+	./tests/test1.sh
+	./statistiche.sh logs.json
+
+test2: server client
+	./tests/test2.sh
+
+test3: server clientTest3
+	./tests/test3.sh
+	./statistiche.sh logs.json
 
 clean:
 	rm -f *~ $(OBJDIR)/*.o $(BINDIR)/*
 
 cleanall:
-	rm -f *~ $(OBJDIR)/*.o $(BINDIR)/* -r tests/evicted1 -r tests/evicted2 -r tests/evicted3 -r tests/test1dest1 -r tests/test1dest2 -r tests/test3dest1 -r tests/test3dest2
+	rm -f *~ $(OBJDIR)/*.o $(BINDIR)/* logs.json -r tests/evicted1 -r tests/evicted2 -r tests/evicted3 -r tests/test1dest1 -r tests/test1dest2 -r tests/test3dest1 -r tests/test3dest2
