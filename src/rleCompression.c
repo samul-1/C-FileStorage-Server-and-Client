@@ -51,7 +51,7 @@ char* RLEdecompress(char* data, size_t compressedSize, size_t uncompressedSize, 
         ret[retIdx++] = data[inIdx];
         if (data[inIdx] == data[inIdx + 1]) { // next digit is the # of occurrences
             size_t occ = ((data[inIdx + 2]) - '0');
-            for (size_t i = 1; i < occ && retIdx < compressedSize; i++) {
+            for (size_t i = 1; i < occ && retIdx < uncompressedSize; i++) {
                 ret[retIdx++] = data[inIdx];
             }
             inIdx += 2;

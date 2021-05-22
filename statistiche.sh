@@ -24,6 +24,8 @@ echo -e -n "Number of ${GREEN}open${RESET_COLOR} operations: "
 grep "\"operationType\": \"OPEN\"" $1 | wc -l
 echo -e -n "Number of ${GREEN}evictions${RESET_COLOR} from cache: "
 grep "\"operationType\": \"EVICTED\"" $1 | wc -l
+echo -e -n "Number of ${GREEN}clients${RESET_COLOR} that used the server: "
+grep "\"operationType\": \"NEW_CLIENT\"" $1 | wc -l
 
 # average processed bytes
 echo -n "Average processed bytes per request: "

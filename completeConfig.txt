@@ -1,5 +1,5 @@
 # max storage capacity *in bytes*
-MAXSTORAGECAP=1000000
+MAXSTORAGECAP=900000000
 
 # max number of files
 MAXFILECOUNT=2

@@ -161,7 +161,7 @@ volatile sig_atomic_t softExit = 0;
 volatile sig_atomic_t hardExit = 0;
 
 void exitSigHandler(int sig) {
-    if (sig == SIGHUP) {
+    if (sig == SIGINT) {
         softExit = 1;
     }
     else
