@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <signal.h>
+#include "../include/rleCompression.h"
 #include "../include/cacheFns.h"
 #include "../include/boundedbuffer.h"
 #include "../include/fileparser.h"
@@ -48,11 +49,11 @@ ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLO
 ANSI_COLOR_CYAN "Files in the storage at the time of exit: " ANSI_COLOR_RESET "\n" \
 
 
-#define SEND_EVICTED_FILE(fd, file, evictedBuf) \
-    DIE_ON_NULL((evictedBuf = calloc(METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->contentSize)+1, 1)));\
-    snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+1, "%010ld%s%010ld", strlen(file->pathname), file->pathname, file->contentSize);\
-    memcpy(evictedBuf+strlen(evictedBuf), file->content, file->contentSize);\
-    DIE_ON_NEG_ONE(writen(fd, evictedBuf, (METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->contentSize)));\
+#define SEND_EVICTED_FILE(fd, file, evictedBuf, originalContent) \
+    DIE_ON_NULL((evictedBuf = calloc(METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+(file->uncompressedSize)+1, 1)));\
+    snprintf(evictedBuf, METADATA_SIZE+strlen(file->pathname)+METADATA_SIZE+1, "%010ld%s%010ld", strlen(file->pathname), file->pathname, file->uncompressedSize);\
+    memcpy(evictedBuf+strlen(evictedBuf), originalContent, file->uncompressedSize);\
+    DIE_ON_NEG_ONE(writen(fd, evictedBuf, (METADATA_SIZE + strlen(file->pathname) + METADATA_SIZE + file->uncompressedSize)));\
     free(evictedBuf);
 
 #define SEND_RESPONSE_CODE(fd, code) \
@@ -328,7 +329,11 @@ void* _startWorker(void* args) {
                     // send evicted files to client
                     while (evictedList) {
                         FileNode_t* tmpPtr = evictedList;
-                        SEND_EVICTED_FILE(rdy_fd, evictedList, evictedBuf);
+                        // decompress file content
+                        char* originalContent = RLEdecompress(evictedList->content, evictedList->contentSize, evictedList->uncompressedSize, 0);
+                        DIE_ON_NULL(originalContent);
+                        SEND_EVICTED_FILE(rdy_fd, evictedList, evictedBuf, originalContent);
+                        free(originalContent);
                         evictedList = evictedList->nextPtr;
                         deallocFile(tmpPtr);
                     }
