@@ -519,6 +519,14 @@ int openFileHandler(CacheStorage_t* store, const char* pathname, int flags, stru
             FileNode_t* victim = getVictim(store, NULL);
             logEvent(store->logBuffer, "EVICTED", victim->pathname, 0, requestor, 0);
             destroyFile(store, victim, notifyList, true);
+
+            // reset ref count for LFU algorithm after evicting victims
+            FileNode_t* tmpPtr = store->hPtr;
+            while (tmpPtr) {
+                tmpPtr->refCount = 0;
+                tmpPtr = tmpPtr->nextPtr;
+            }
+
         }
         fPtr = allocFile(pathname);
         if (!fPtr) {
@@ -796,7 +804,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
 
     // actual write operation
 
-    // get the decompress content and also allocate `newContentLen` extra bytes after it
+    // get the decompressed content and also allocate `newContentLen` extra bytes after it
     char* decompressedContent = RLEdecompress(fptr->content, fptr->contentSize, fptr->uncompressedSize, newContentLen);
 
     // now append new content to the buffer allocated by `RLEdecompress`
@@ -819,7 +827,7 @@ int writeToFileHandler(CacheStorage_t* store, const char* pathname, const char* 
         FileNode_t* victim = getVictim(store, fptr);
         assert(victim);
         struct fdNode* tmpList = NULL; // will hold a list of fd's that were waiting on this file before it got deleted
-        destroyFile(store, victim, &tmpList, false);
+        destroyFile(store, victim, &tmpList, false); // unlink the file from storage but don't free the struct itself
 
         // build a list of evicted files
         victim->nextPtr = *evictedList;
