@@ -32,6 +32,6 @@ echo -n "Average processed bytes per request: "
 grep -oP '(?<="bytesProcessed": )[0-9]+' $1 | awk '{SUM += $1; COUNT += 1} END {print int(SUM/COUNT) " bytes"}'
 echo ""
 # requests served per thread
-echo "Requests served by each worker: "
+echo "Requests served by each thread: "
 #grep -oP "\"workerTid\": [^,]*" $1 | sort | uniq -c
-awk -F: '/"workerTid"/ {count[$2]++} END {for (i in count) print "· Worker" i " "count[i] " requests"}' $1
+awk -F: '/"workerTid"/ {count[$2]++} END {for (i in count) print "· Thread" i " "count[i] " requests"}' $1

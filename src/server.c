@@ -162,7 +162,7 @@ volatile sig_atomic_t softExit = 0;
 volatile sig_atomic_t hardExit = 0;
 
 void exitSigHandler(int sig) {
-    if (sig == SIGINT) {
+    if (sig == SIGHUP) {
         softExit = 1;
     }
     else
@@ -464,6 +464,10 @@ int main(int argc, char** argv) {
 
     destroyParser(configParser);
 
+    // ignore SIGPIPE
+    sigaction(SIGPIPE, &(struct sigaction){SIG_IGN}, NULL);
+
+    // install signal handler(s)
     struct sigaction sig_handler;
     memset(&sig_handler, 0, sizeof(sig_handler));
     sig_handler.sa_handler = exitSigHandler;
@@ -473,9 +477,6 @@ int main(int argc, char** argv) {
     sigaddset(&handlerMask, SIGINT);
     sigaddset(&handlerMask, SIGHUP);
     sigaddset(&handlerMask, SIGQUIT);
-    /*     // block signals while we're installing handler
-        DIE_ON_NEG_ONE(sigprocmask(SIG_BLOCK, &handlerMask, &oldMask));
-     */
     sig_handler.sa_mask = handlerMask;
 
     DIE_ON_NEG_ONE(sigaction(SIGINT, &sig_handler, NULL));
