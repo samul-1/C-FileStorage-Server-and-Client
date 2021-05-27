@@ -63,16 +63,8 @@ typedef struct cacheStorage {
 } CacheStorage_t;
 
 
-// ! remove
-void printFile(const CacheStorage_t* store, const char* pathname);
-void printFileptr(FileNode_t* f);
-void printStore(const CacheStorage_t* store);
-void addFileToStore(CacheStorage_t* store, FileNode_t* filePtr);
-void printFdList(struct fdNode* h);
-void freeFdList(struct fdNode* h);
-// ! end remove
-
 CacheStorage_t* allocStorage(const size_t maxFileNum, const size_t maxStorageSize, const short replacementAlgo);
+void printStore(const CacheStorage_t* store);
 int destroyStorage(CacheStorage_t* store);
 int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int outcome, int requestor, size_t processedSize);
 

@@ -46,7 +46,8 @@ ANSI_COLOR_CYAN "Max number of files reached: " ANSI_COLOR_RESET "%zu\n" \
 ANSI_COLOR_CYAN "Max total storage size reached: " ANSI_COLOR_RESET "%zu bytes\n" \
 ANSI_COLOR_CYAN "Number of files that have been evicted from the cache: " ANSI_COLOR_RESET "%zu\n" \
 ANSI_COLOR_CYAN "Number of files in the storage at the time of exit: " ANSI_COLOR_RESET "%zu\n" \
-ANSI_COLOR_CYAN "Files in the storage at the time of exit: " ANSI_COLOR_RESET "\n" \
+ANSI_COLOR_CYAN "Max number of simultaneous clients: " ANSI_COLOR_RESET "%zu\n" \
+ANSI_COLOR_CYAN "Files in the storage at the time of exit: " ANSI_COLOR_RESET "\n"
 
 
 #define SEND_EVICTED_FILE(fd, file, evictedBuf, originalContent) \
@@ -168,21 +169,6 @@ void exitSigHandler(int sig) {
     else
         hardExit = 1;
 }
-
-ssize_t updateClientCount(ssize_t delta) {
-    static pthread_mutex_t countMutex = PTHREAD_MUTEX_INITIALIZER;
-    static ssize_t count = 0;
-    size_t ret;
-
-    DIE_ON_NEG_ONE(pthread_mutex_lock(&countMutex));
-    count += delta;
-    ret = count;
-    DIE_ON_NEG_ONE(pthread_mutex_unlock(&countMutex));
-    return ret;
-}
-
-#define GET_CLIENT_COUNT updateClientCount(0)
-
 
 void* _startWorker(void* args) {
     /*
@@ -409,7 +395,6 @@ void* _startWorker(void* args) {
             // the lock, notify them that the operation has been completed successfully (they acquired the lock)
             NOTIFY_PENDING_CLIENTS(notifyList, OK, pipeBuf, pipeOut);
 
-            updateClientCount(-1);
             // when the manager reads "0", he'll know a client left
             DIE_ON_NEG_ONE(write(pipeOut, CLIENT_LEFT_MSG, PIPE_BUF_LEN));
         }
@@ -444,7 +429,9 @@ int main(int argc, char** argv) {
         taskBufSize,
         logBufSize,
         socketBacklog,
-        replacementAlgo;
+        replacementAlgo,
+        clientCount = 0, // number of online clients
+        maxSimultaneousClients = 0;
 
     char
         sockname[BUFSIZ],
@@ -543,7 +530,7 @@ int main(int argc, char** argv) {
         // wait for a fd to be ready for read operation
         if ((select(fd_num + 1, &rset, NULL, NULL, NULL)) == -1) {
             if (errno == EINTR) {
-                if (softExit && GET_CLIENT_COUNT == 0) {
+                if (softExit && clientCount == 0) {
                     //goto cleanup;
                     break;
                 }
@@ -568,7 +555,7 @@ int main(int argc, char** argv) {
                     }
                     else {
                         logEvent(store->logBuffer, "CLIENT_LEFT", "", 0, -1, 0);
-                        if (softExit && GET_CLIENT_COUNT == 0) { // reding 0 from pipe means a client left
+                        if (--clientCount == 0 && softExit) { // reding 0 from pipe means a client left
                             goto cleanup; // using `goto` to break out of nested loops
                         }
                     }
@@ -583,7 +570,8 @@ int main(int argc, char** argv) {
                     }
                     else {
                         FD_SET(fd_communication, &setsave);
-                        updateClientCount(1);
+                        clientCount += 1;
+                        maxSimultaneousClients = MAX(maxSimultaneousClients, clientCount);
                         //printf("number of clients %zu\n", GET_CLIENT_COUNT);
 
                         fd_num = MAX(fd_communication, fd_num);
@@ -629,7 +617,8 @@ cleanup:
         store->maxReachedFileNum,
         store->maxReachedStorageSize,
         store->numVictims,
-        store->currFileNum
+        store->currFileNum,
+        maxSimultaneousClients
     );
     printStore(store);
 

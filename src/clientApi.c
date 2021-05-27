@@ -129,7 +129,6 @@ static int storeFiles(const char* dirname) {
     return count;
 }
 
-// todo document errno values
 int openConnection(const char* sockname, int msec, const struct timespec abstime) {
     struct sockaddr_un sockaddr;
     strncpy(sockaddr.sun_path, sockname, UNIX_PATH_MAX);

@@ -93,7 +93,6 @@ int logEvent(BoundedBuffer* buffer, const char* op, const char* pathname, int ou
     return enqueue(buffer, eventBuf, strlen(eventBuf) + 1);
 }
 
-// ! --------------------------------------------------------------------------
 static void concatenateFdLists(struct fdNode** dest, struct fdNode* src) {
     /**
      * @brief Makes the last element of list `dest` point to the head of list `src`
@@ -201,25 +200,6 @@ static int popNodeFromFdQueue(struct fdNode** listPtr, int fd) {
     return retval;
 }
 
-void printFdList(struct fdNode* h) {
-    struct fdNode* curr = h;
-    while (curr) {
-        printf("%d->", curr->fd);
-        curr = curr->nextPtr;
-    }
-    puts("");
-}
-
-void freeFdList(struct fdNode* h) {
-    while (h) {
-        struct fdNode* tmp = h;
-
-        h = h->nextPtr;
-        free(tmp);
-    }
-    puts("");
-}
-// ! ---------------------------------------------------------------------------
 
 void deallocFile(FileNode_t* fptr) {
     assert(fptr);
@@ -411,27 +391,6 @@ static FileNode_t* findFile(const CacheStorage_t* store, const char* pathname) {
     return (FileNode_t*)ret;
 }
 
-
-void printFile(const CacheStorage_t* store, const char* pathname) {
-    FileNode_t* f = findFile(store, pathname);
-    puts("-----------");
-    if (!f) {
-        printf("%s: file not found\n", pathname);
-    }
-    else {
-        printf("File: %s\nContent: %s\nSize: %zu\nLocked by: %d\nRefCount: %zu\nLastRef: %ld\n", f->pathname, f->content, f->contentSize, f->lockedBy, f->refCount, f->lastRef);
-        printf("locked on it:\n");
-        printFdList(f->pendingLocks_hPtr);
-        printf("open:\n");
-        printFdList(f->openDescriptors);
-    }
-    puts("-----------");
-}
-
-void printFileptr(FileNode_t* f) {
-    printf("File: %s\nContent: %s\nLocked by: %d\nRefCount: %zu\nLastRef: %ld\n", f->pathname, f->content, f->lockedBy, f->refCount, f->lastRef);
-
-}
 
 void printStore(const CacheStorage_t* store) {
     FileNode_t* currptr = store->hPtr;
