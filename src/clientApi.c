@@ -37,7 +37,6 @@ const char* errMessages[] = {
 
 #define INITIAL_REQ_SIZ 1024
 
-// todo print processed bytes too
 #define PRINT_IF_ENABLED(fd, op, filepath, msg) \
 if(PRINTS_ENABLED) {\
     fprintf(fd, "[%d] %s '%s': %s", getpid(), #op, filepath, msg);\

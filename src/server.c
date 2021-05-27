@@ -169,8 +169,6 @@ void exitSigHandler(int sig) {
         hardExit = 1;
 }
 
-// todo put this in manager and handle this without the shared var
-// todo also add a `maxClientCount`
 ssize_t updateClientCount(ssize_t delta) {
     static pthread_mutex_t countMutex = PTHREAD_MUTEX_INITIALIZER;
     static ssize_t count = 0;
@@ -564,11 +562,6 @@ int main(int argc, char** argv) {
                     // add file descriptor back into readset
                     DIE_ON_NEG_ONE(read(i, pipebuf, PIPE_BUF_LEN));
 
-                    //! remove after debug
-                    if (atol(pipebuf) == 0) {
-                        //printf("client exited: curr num of clients %zu\n", GET_CLIENT_COUNT);
-                    }
-                    //! ---
                     if (atol(pipebuf) != 0) {
                         FD_SET(atol(pipebuf), &setsave);
                         fd_num = MAX(atol(pipebuf), fd_num);
